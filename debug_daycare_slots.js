@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const BASE_URL = 'http://localhost:3000';
 const EMAIL = 'patti.jaeger@houndstownusa.com';
-const PASSWORD = 'c0lby&j4ck';
+const PASSWORD = 'old_password';
 
 // Daycare Variation IDs from server/index.js
 const DAYCARE_VARIATIONS = {
