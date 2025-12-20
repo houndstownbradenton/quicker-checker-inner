@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quicker Checker - Hounds Town Bradenton</title>
+  <link rel="stylesheet" href="/src/styles/index.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+      <div class="login-container">
+        <div class="logo">
+          <h1>🐕 Quicker Checker</h1>
+          <p class="subtitle">Hounds Town Bradenton</p>
+        </div>
+        <form id="login-form" class="login-form">
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required placeholder="staff@houndstown.com">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required placeholder="••••••••">
+          </div>
+          <button type="submit" class="btn btn-primary btn-large">
+            <span class="btn-text">Sign In</span>
+            <span class="btn-loading hidden">Signing in...</span>
+          </button>
+          <div id="login-error" class="error-message hidden"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="main-screen" class="screen hidden">
+      <header class="header">
+        <div class="header-left">
+          <h1>🐕 Quicker Checker</h1>
+        </div>
+        <div class="header-right">
+          <span id="user-name" class="user-name"></span>
+          <button id="logout-btn" class="btn btn-secondary btn-small">Logout</button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <!-- Search Section -->
+        <section class="search-section">
+          <div class="search-container">
+            <input 
+              type="text" 
+              id="dog-search" 
+              class="search-input" 
+              placeholder="🔍 Search for a dog by name..."
+              autocomplete="off"
+            >
+          </div>
+          <div class="search-stats">
+            <span id="dog-count">0 dogs loaded</span>
+          </div>
+        </section>
+
+        <!-- Dogs Grid -->
+        <section class="dogs-section">
+          <div id="dogs-grid" class="dogs-grid">
+            <!-- Dog cards will be inserted here -->
+          </div>
+          <div id="no-results" class="no-results hidden">
+            <p>No dogs found matching your search.</p>
+          </div>
+          <div id="loading-dogs" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading dogs...</p>
+          </div>
+        </section>
+      </main>
+
+      <!-- Check-in Modal -->
+      <div id="checkin-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Check In</h2>
+            <button class="modal-close" id="modal-close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div id="selected-dog-info" class="selected-dog-info">
+              <!-- Selected dog info will be inserted here -->
+            </div>
+            <div id="checkin-status" class="checkin-status">
+              <!-- Status updates will appear here -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancel-checkin" class="btn btn-secondary">Cancel</button>
+            <button id="confirm-checkin" class="btn btn-primary btn-large">
+              <span class="btn-text">✓ Check In for Daycare</span>
+              <span class="btn-loading hidden">Processing...</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Success Toast -->
+      <div id="toast" class="toast hidden">
+        <span id="toast-message"></span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>
