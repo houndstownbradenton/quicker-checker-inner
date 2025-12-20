@@ -1,43 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quicker Checker - Hounds Town Bradenton</title>
   <link rel="stylesheet" href="/src/styles/index.css">
 </head>
+
 <body>
   <div id="app">
     <!-- Login Screen -->
     <div id="login-screen" class="screen active">
       <div class="login-container">
-        <div class="logo">
-          <h1>🐕 Quicker Checker</h1>
-          <p class="subtitle">Hounds Town Bradenton</p>
+        <div class="card login-card">
+          <div class="login-title">
+            <h1>🐕💨 Quicker Checker Inner</h1>
+            <p class="subtitle">Hounds Town Bradenton</p>
+          </div>
+          <form id="login-form" class="login-form">
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input type="email" id="email" name="email" required placeholder="staff@houndstown.com">
+            </div>
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary btn-large">
+              <span class="btn-text">Sign In</span>
+              <span class="btn-loading hidden">Signing in...</span>
+            </button>
+            <div id="login-error" class="login-error hidden"></div>
+          </form>
         </div>
-        <form id="login-form" class="login-form">
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required placeholder="staff@houndstown.com">
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required placeholder="••••••••">
-          </div>
-          <button type="submit" class="btn btn-primary btn-large">
-            <span class="btn-text">Sign In</span>
-            <span class="btn-loading hidden">Signing in...</span>
-          </button>
-          <div id="login-error" class="error-message hidden"></div>
-        </form>
       </div>
     </div>
 
     <!-- Main Screen -->
     <div id="main-screen" class="screen hidden">
-      <header class="header">
+      <header class="app-header">
         <div class="header-left">
-          <h1>🐕 Quicker Checker</h1>
+          <h1>🐕💨 Quicker Checker Inner</h1>
         </div>
         <div class="header-right">
           <span id="user-name" class="user-name"></span>
@@ -45,26 +49,21 @@
         </div>
       </header>
 
-      <main class="main-content">
+      <main class="main-content app-grid">
         <!-- Search Section -->
-        <section class="search-section">
+        <section class="search-section card" style="margin-bottom: 2rem;">
           <div class="search-container">
-            <input 
-              type="text" 
-              id="dog-search" 
-              class="search-input" 
-              placeholder="🔍 Search for a dog by name..."
-              autocomplete="off"
-            >
+            <input type="text" id="dog-search" class="search-input" placeholder="🔍 Search for a dog by name..."
+              autocomplete="off">
           </div>
-          <div class="search-stats">
+          <div class="search-stats" style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">
             <span id="dog-count">0 dogs loaded</span>
           </div>
         </section>
 
         <!-- Dogs Grid -->
         <section class="dogs-section">
-          <div id="dogs-grid" class="dogs-grid">
+          <div id="dogs-grid" class="grid grid-cols-2">
             <!-- Dog cards will be inserted here -->
           </div>
           <div id="no-results" class="no-results hidden">
@@ -78,16 +77,36 @@
       </main>
 
       <!-- Check-in Modal -->
-      <div id="checkin-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
+      <div id="checkin-modal" class="modal-overlay hidden">
         <div class="modal-content">
           <div class="modal-header">
-            <h2>Check In</h2>
-            <button class="modal-close" id="modal-close">&times;</button>
+            <h2 class="modal-title">Check In</h2>
+            <button class="modal-close-btn" id="modal-close">&times;</button>
           </div>
           <div class="modal-body">
             <div id="selected-dog-info" class="selected-dog-info">
               <!-- Selected dog info will be inserted here -->
+            </div>
+            <div class="service-selection-section">
+              <div class="form-group">
+                <label for="service-type">Service Type</label>
+                <select id="service-type" class="service-select">
+                  <option value="boarding">Boarding</option>
+                  <option value="daycare" selected>Daycare</option>
+                  <option value="evaluation">Evaluation</option>
+                  <option value="spa">Spa Services</option>
+                </select>
+              </div>
+              <div class="form-group" id="variation-group">
+                <label for="service-variation">Specific Service / Room</label>
+                <select id="service-variation" class="service-select">
+                  <option value="">Loading...</option>
+                </select>
+              </div>
+            </div>
+            <div class="date-picker-section">
+              <label for="checkin-date">Check-in Date</label>
+              <input type="date" id="checkin-date" class="date-input" />
             </div>
             <div id="checkin-status" class="checkin-status">
               <!-- Status updates will appear here -->
@@ -96,7 +115,7 @@
           <div class="modal-footer">
             <button id="cancel-checkin" class="btn btn-secondary">Cancel</button>
             <button id="confirm-checkin" class="btn btn-primary btn-large">
-              <span class="btn-text">✓ Check In for Daycare</span>
+              <span class="btn-text">✓ Check In</span>
               <span class="btn-loading hidden">Processing...</span>
             </button>
           </div>
@@ -112,4 +131,5 @@
 
   <script type="module" src="/src/app.js"></script>
 </body>
+
 </html>

@@ -63,6 +63,30 @@ async function mytimeRequest(method, endpoint, data = null, authToken = null) {
     }
 }
 
+// Helper to make Partner API requests (for location-wide access to clients/pets)
+// Uses X-Api-Key header and partners-api.mytime.com host
+async function partnerApiRequest(method, endpoint, params = null) {
+    const url = `https://partners-api.mytime.com/api${endpoint}`;
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Api-Key': MYTIME_API_KEY
+    };
+
+    try {
+        const response = await axios({
+            method,
+            url,
+            params,
+            headers
+        });
+        return response.data;
+    } catch (error) {
+        console.error(`Partner API Error: ${method} ${endpoint}`, error.response?.data || error.message);
+        throw error;
+    }
+}
+
 // === API ROUTES ===
 
 // Login - authenticate staff
@@ -98,7 +122,7 @@ app.get('/api/company', async (req, res) => {
             success: true,
             company: result.company,
             locationId: LOCATION_ID,
-            daycareVariationId: DAYCARE_VARIATION_ID
+            daycareVariationId: getDaycareVariationId()
         });
     } catch (error) {
         res.status(error.response?.status || 500).json({
@@ -210,29 +234,206 @@ app.get('/api/dogs', async (req, res) => {
             error: error.response?.data?.errors || 'Failed to fetch dogs'
         });
     }
+
+});
+
+// Get employees for location
+app.get('/api/employees', async (req, res) => {
+    try {
+        const { locationId } = req.query;
+        const locId = locationId || LOCATION_ID;
+        const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/employees?location_id=${locId}`);
+        res.json({
+            success: true,
+            employees: result.employees || []
+        });
+    } catch (error) {
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || 'Failed to fetch employees'
+        });
+    }
+});
+
+
+// Search dogs by name using Partner API (location-wide access)
+app.get('/api/dogs/search', async (req, res) => {
+    try {
+        const authToken = req.headers.authorization;
+        const { q } = req.query;
+
+        if (!authToken) {
+            return res.status(401).json({ success: false, error: 'Authorization required' });
+        }
+
+        if (!q || q.trim().length < 2) {
+            return res.status(400).json({ success: false, error: 'Search query must be at least 2 characters' });
+        }
+
+        const query = q.trim();
+        const queryLower = query.toLowerCase();
+        let allDogs = [];
+
+        // Get clients at this location with their children
+        // Note: We don't use the search parameter because it only searches client names, not pet names
+        // We filter locally to support searching by pet name
+        const clientsResult = await partnerApiRequest('GET', '/clients', {
+            include_children: true,
+            location_mytime_ids: [parseInt(LOCATION_ID)],
+            per_page: 20
+        });
+
+        const clients = clientsResult.clients || [];
+        for (const client of clients) {
+            if (client.children && Array.isArray(client.children)) {
+                for (const child of client.children) {
+                    allDogs.push({
+                        ...child,
+                        owner_first_name: client.first_name,
+                        owner_last_name: client.last_name,
+                        owner_email: client.email,
+                        client_id: client.id || client.mytime_id,
+                        preferred_location_mytime_id: client.preferred_location_mytime_id
+                    });
+                }
+            }
+        }
+
+        // Also try /children endpoint with search for pet name search
+        try {
+            const childrenResult = await partnerApiRequest('GET', '/children', {
+                search: query,
+                per_page: 20
+            });
+            const children = childrenResult.children || childrenResult || [];
+            if (Array.isArray(children)) {
+                for (const child of children) {
+                    // Avoid duplicates by checking mytime_id
+                    const exists = allDogs.some(d => d.mytime_id === child.mytime_id);
+                    if (!exists) {
+                        allDogs.push(child);
+                    }
+                }
+            }
+        } catch (e) {
+            // /children endpoint may not support search, that's ok
+            console.log('Children search:', e.response?.data?.errors || e.message);
+        }
+
+        // Filter results by pet name or owner name
+        const matchedDogs = allDogs.filter(dog => {
+            const petName = (dog.pet_name || dog.label || dog.first_name || '').toLowerCase();
+            const ownerName = `${dog.owner_first_name || ''} ${dog.owner_last_name || ''}`.toLowerCase();
+            return petName.includes(queryLower) || ownerName.includes(queryLower);
+        });
+
+        // Sort: prefer dogs from clients with preferred_location matching our location
+        const locationId = parseInt(LOCATION_ID);
+        matchedDogs.sort((a, b) => {
+            const aPreferred = a.preferred_location_mytime_id === locationId ? 1 : 0;
+            const bPreferred = b.preferred_location_mytime_id === locationId ? 1 : 0;
+            return bPreferred - aPreferred; // Higher priority first
+        });
+
+        // Note: Partner API doesn't include photos for children
+        // Photos are only available via Booking API which requires user-specific auth
+
+        console.log(`Search for "${query}": ${clients.length} clients, ${matchedDogs.length} matched dogs`);
+
+        res.json({
+            success: true,
+            dogs: matchedDogs
+        });
+    } catch (error) {
+        console.error('Search error:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || 'Failed to search dogs'
+        });
+    }
 });
 
 // Get open times for daycare on a specific date
 app.get('/api/open-times', async (req, res) => {
     try {
         const authToken = req.headers.authorization;
-        const { dogId, date } = req.query;
+        const { dogId, date, variationId } = req.query;
+        console.log(`[open_times] REQUEST:`, req.query);
+
+        // ... existing date parsing ...
+        const selectedDate = date || new Date().toISOString().split('T')[0];
+        const [year, month, day] = selectedDate.split('-').map(Number);
+        const localDate = new Date(year, month - 1, day);
+
+        const targetVariationId = variationId || getDaycareVariationId(localDate);
+        console.log(`[open_times] Target variation: ${targetVariationId} (date: ${selectedDate})`);
 
         const params = new URLSearchParams({
             location_id: LOCATION_ID,
-            variation_ids: DAYCARE_VARIATION_ID,
+            variation_ids: targetVariationId,
             is_existing_customer: 'true',
-            date: date || new Date().toISOString().split('T')[0]
+            date: selectedDate
         });
 
-        if (dogId) {
-            params.append('child_id', dogId);
+        if (dogId) params.append('child_id', dogId);
+
+        console.log(`[open_times] Calling MyTime: ${params.toString()}`);
+        const result = await mytimeRequest('GET', `/open_times?${params.toString()}`, null, authToken);
+
+        let openTimes = result.open_times || [];
+
+        // FALLBACK: If Daycare and no times found, inject a default slot
+        // Daycare is often "bookable: false" in API but valid for walk-ins/requests
+        const isDaycare = Object.values(DAYCARE_VARIATIONS).includes(targetVariationId);
+
+        if (isDaycare && openTimes.length === 0) {
+            console.log(`[open_times] Empty Daycare slots. Injecting MOCK slot.`);
+
+            // Hours: M-F (7-7), Sat (9-5)
+            let startHour = 7;
+            let endHour = 19; // 7 PM
+
+            if (String(targetVariationId) === String(DAYCARE_VARIATIONS.saturday)) {
+                startHour = 9;
+                endHour = 17; // 5 PM
+            }
+
+            // For today, ensure start time is in the future
+            const now = new Date();
+            const selectedYMD = selectedDate;
+            const nowYMD = now.toISOString().split('T')[0];
+
+            if (selectedYMD === nowYMD) {
+                const currentHour = now.getHours();
+                if (currentHour >= 7) {
+                    startHour = currentHour + 1; // Start next hour
+                }
+            }
+
+            // Start hour may have been bumped past end hour?
+            if (startHour >= endHour) {
+                console.log('[open_times] Mock slot skipped: Closed or time passed.');
+                openTimes = [];
+            } else {
+                // Format: HH:00:00
+                const startStr = `${String(startHour).padStart(2, '0')}:00:00`;
+                const endStr = `${String(endHour).padStart(2, '0')}:00:00`;
+
+                openTimes = [{
+                    start: `${selectedDate}T${startStr}-05:00`,
+                    end: `${selectedDate}T${endStr}-05:00`,
+                    begin_at: `${selectedDate}T${startStr}-05:00`,
+                    end_at: `${selectedDate}T${endStr}-05:00`,
+                    deal_id: 261198
+                }];
+            }
         }
 
-        const result = await mytimeRequest('GET', `/open_times?${params.toString()}`, null, authToken);
+        console.log(`[open_times] Sending ${openTimes.length} slots.`);
+
         res.json({
             success: true,
-            openTimes: result.open_times || []
+            openTimes: openTimes
         });
     } catch (error) {
         res.status(error.response?.status || 500).json({
@@ -269,18 +470,27 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
     try {
         const authToken = req.headers.authorization;
         const { cartId } = req.params;
-        const { dogId, beginAt, endAt, dealId } = req.body;
+        const { dogId, beginAt, endAt, dealId, variationId, employeeIds } = req.body;
+
+        // Get the correct variation based on the booking date
+        // Parse date as local time to get correct day of week
+        let bookingDate = new Date();
+        if (beginAt) {
+            const dateStr = beginAt.split('T')[0]; // Extract date portion
+            const [year, month, day] = dateStr.split('-').map(Number);
+            bookingDate = new Date(year, month - 1, day); // month is 0-indexed
+        }
 
         const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, {
             location_id: parseInt(LOCATION_ID),
-            variation_ids: DAYCARE_VARIATION_ID,
+            variation_ids: variationId || getDaycareVariationId(bookingDate),
             deal_id: dealId,
-            employee_ids: '',
+            employee_ids: employeeIds || '',
             begin_at: beginAt,
             end_at: endAt,
             is_existing_customer: true,
             travel_to_customer: false,
-            has_specific_employee: false,
+            has_specific_employee: !!employeeIds,
             child_id: dogId ? parseInt(dogId) : null
         }, authToken);
 
@@ -341,9 +551,10 @@ app.post('/api/purchase', async (req, res) => {
             purchase: result.purchase
         });
     } catch (error) {
+        console.error('Create purchase error:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             success: false,
-            error: error.response?.data?.errors || 'Failed to create purchase'
+            error: error.response?.data?.errors || error.response?.data || 'Failed to create purchase'
         });
     }
 });
@@ -376,7 +587,7 @@ app.get('/api/health', (req, res) => {
             baseUrl: MYTIME_BASE_URL,
             companyId: COMPANY_ID ? 'configured' : 'missing',
             locationId: LOCATION_ID ? 'configured' : 'missing',
-            daycareVariationId: DAYCARE_VARIATION_ID ? 'configured' : 'missing'
+            daycareVariationId: getDaycareVariationId() ? 'configured' : 'missing'
         }
     });
 });

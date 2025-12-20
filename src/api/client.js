@@ -26,7 +26,16 @@ async function apiRequest(method, endpoint, data = null, authToken = null) {
     }
 
     const response = await fetch(url, options);
-    const json = await response.json();
+    const text = await response.text();
+
+    let json;
+    try {
+        json = JSON.parse(text);
+    } catch (e) {
+        console.error('API Response Parse Error. Status:', response.status);
+        console.error('Response Body:', text.substring(0, 200)); // Log first 200 chars
+        throw new Error(`Server returned non-JSON response (${response.status})`);
+    }
 
     if (!response.ok) {
         throw new Error(json.error || `API error: ${response.status}`);
@@ -57,12 +66,20 @@ export async function getDogs(authToken) {
 }
 
 /**
+ * Search dogs by name across all clients at the location
+ */
+export async function searchDogs(query, authToken) {
+    return apiRequest('GET', `/dogs/search?q=${encodeURIComponent(query)}`, null, authToken);
+}
+
+/**
  * Get available times for daycare
  */
-export async function getOpenTimes(dogId, date, authToken) {
+export async function getOpenTimes(dogId, date, authToken, variationId) {
     const params = new URLSearchParams();
     if (dogId) params.append('dogId', dogId);
     if (date) params.append('date', date);
+    if (variationId) params.append('variationId', variationId);
 
     return apiRequest('GET', `/open-times?${params.toString()}`, null, authToken);
 }
@@ -100,6 +117,13 @@ export async function createPurchase(cartId, dogId, authToken) {
  */
 export async function checkInAppointment(appointmentId, authToken) {
     return apiRequest('PUT', `/check-in/${appointmentId}`, null, authToken);
+}
+
+/**
+ * Get available variations (services)
+ */
+export async function getVariations(authToken) {
+    return apiRequest('GET', '/variations', null, authToken);
 }
 
 /**

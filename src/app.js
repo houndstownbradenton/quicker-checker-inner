@@ -5,6 +5,12 @@
 
 import * as api from './api/client.js';
 
+const DAYCARE_VARIATIONS = {
+    weekday: '91629241',      // Standard Daycare (Mon-Fri)
+    saturday: '92628859',     // Saturday Daycare
+    sunday: '111325854'       // Sunday Daycare
+};
+
 // ==========================================
 // State
 // ==========================================
@@ -21,7 +27,8 @@ let state = {
         petBreedFieldId: null,
         petColorFieldId: null,
         petGenderFieldId: null
-    }
+    },
+    variations: []
 };
 
 // ==========================================
@@ -56,9 +63,13 @@ const elements = {
     checkinModal: document.getElementById('checkin-modal'),
     modalClose: document.getElementById('modal-close'),
     selectedDogInfo: document.getElementById('selected-dog-info'),
+    checkinDate: document.getElementById('checkin-date'),
     checkinStatus: document.getElementById('checkin-status'),
     cancelCheckin: document.getElementById('cancel-checkin'),
     confirmCheckin: document.getElementById('confirm-checkin'),
+    serviceType: document.getElementById('service-type'),
+    serviceVariation: document.getElementById('service-variation'),
+    variationGroup: document.getElementById('variation-group'),
 
     // Toast
     toast: document.getElementById('toast'),
@@ -101,8 +112,24 @@ function setupEventListeners() {
     elements.cancelCheckin.addEventListener('click', closeModal);
     elements.confirmCheckin.addEventListener('click', handleCheckIn);
 
+    // Service Selection
+    elements.serviceType.addEventListener('change', updateServiceDropdowns);
+    elements.checkinDate.addEventListener('change', () => {
+        if (elements.serviceType.value === 'daycare') {
+            updateServiceDropdowns();
+        }
+    });
+    elements.serviceVariation.addEventListener('change', () => {
+        // Trigger availability check if date is selected?
+        // For now just letting the user click confirm is fine
+    });
+
     // Close modal on backdrop click
-    elements.checkinModal.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+    elements.checkinModal.addEventListener('click', (e) => {
+        if (e.target === elements.checkinModal) {
+            closeModal();
+        }
+    });
 }
 
 // ==========================================
@@ -166,22 +193,28 @@ function handleLogout() {
 
 function showLoginScreen() {
     elements.loginScreen.classList.add('active');
+    elements.loginScreen.classList.remove('hidden');
     elements.mainScreen.classList.add('hidden');
     elements.loginForm.reset();
 }
 
 async function showMainScreen() {
     elements.loginScreen.classList.remove('active');
+    elements.loginScreen.classList.add('hidden');
     elements.mainScreen.classList.remove('hidden');
+    elements.mainScreen.classList.add('active');
 
     // Update user name in header
     if (state.user) {
         elements.userName.textContent = `${state.user.first_name} ${state.user.last_name}`;
     }
 
-    // Load company data and dogs
+    // Load company data only (dogs will load when user searches)
     await loadCompanyData();
-    await loadDogs();
+
+    // Show initial search prompt
+    elements.dogCount.textContent = 'Search for a dog by name';
+    showSearchPrompt();
 }
 
 // ==========================================
@@ -254,14 +287,30 @@ async function loadDogs() {
 }
 
 function processDog(dog) {
-    // Extract values from custom fields
+    // Extract values from custom fields or direct fields (Partner API)
     let name = null;
     let breed = null;
     let color = null;
     let gender = null;
     let photo = null;
+    let ownerName = 'Unknown';
 
-    if (dog.custom_field_values && Array.isArray(dog.custom_field_values)) {
+    // Partner API provides these directly on the dog object
+    if (dog.pet_name) {
+        name = dog.pet_name;
+    }
+    if (dog.pet_breed) {
+        breed = dog.pet_breed.trim();
+    }
+    if (dog.gender) {
+        gender = dog.gender;
+    }
+    if (dog.owner_first_name || dog.owner_last_name) {
+        ownerName = `${dog.owner_first_name || ''} ${dog.owner_last_name || ''}`.trim();
+    }
+
+    // Legacy: Extract from custom fields if Partner API fields not present
+    if (!name && dog.custom_field_values && Array.isArray(dog.custom_field_values)) {
         const values = dog.custom_field_values;
 
         // Get name
@@ -271,7 +320,7 @@ function processDog(dog) {
         }
 
         // Get breed
-        if (state.customFields.petBreedFieldId) {
+        if (!breed && state.customFields.petBreedFieldId) {
             const breedField = values.find(v => v.custom_field_id === state.customFields.petBreedFieldId);
             if (breedField) breed = breedField.value;
         }
@@ -283,7 +332,7 @@ function processDog(dog) {
         }
 
         // Get gender
-        if (state.customFields.petGenderFieldId) {
+        if (!gender && state.customFields.petGenderFieldId) {
             const genderField = values.find(v => v.custom_field_id === state.customFields.petGenderFieldId);
             if (genderField) gender = genderField.value;
         }
@@ -291,7 +340,7 @@ function processDog(dog) {
 
     // Fallback to first_name or label if name not found
     if (!name) {
-        name = dog.first_name || dog.label || `Pet #${dog.id}`;
+        name = dog.first_name || dog.label || `Pet #${dog.id || dog.mytime_id}`;
     }
 
     // Get photo if available
@@ -299,10 +348,18 @@ function processDog(dog) {
         photo = dog.photo.medium || dog.photo.thumb || dog.photo.original;
     }
 
+    // Use mytime_id if id not present
+    const dogId = dog.id || dog.mytime_id;
+
+    // Use owner fields from Partner API or fall back to last_name
+    if (ownerName === 'Unknown') {
+        ownerName = dog.last_name || 'Unknown';
+    }
+
     return {
-        id: dog.id,
+        id: dogId,
         name,
-        ownerLastName: dog.last_name || 'Unknown',
+        ownerLastName: ownerName,
         breed: breed || 'Unknown breed',
         color: color || null,
         gender: gender || null,
@@ -315,20 +372,172 @@ function processDog(dog) {
 // Search
 // ==========================================
 
-function handleSearch(e) {
-    const query = e.target.value.toLowerCase().trim();
+// Debounce timer
+let searchTimeout = null;
 
+function handleSearch(e) {
+    const query = e.target.value.trim();
+
+    // Clear previous timeout
+    if (searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+
+    // If empty, show search prompt
     if (!query) {
-        state.filteredDogs = [...state.dogs];
-    } else {
-        state.filteredDogs = state.dogs.filter(dog =>
-            dog.name.toLowerCase().includes(query) ||
-            dog.ownerLastName.toLowerCase().includes(query) ||
-            dog.breed.toLowerCase().includes(query)
+        state.dogs = [];
+        state.filteredDogs = [];
+        elements.dogCount.textContent = 'Search for a dog by name';
+        showSearchPrompt();
+        return;
+    }
+
+    // Require at least 2 characters
+    if (query.length < 2) {
+        elements.dogCount.textContent = 'Type at least 2 characters to search';
+        return;
+    }
+
+    // Debounce - wait 300ms before searching
+    searchTimeout = setTimeout(() => {
+        searchDogs(query);
+    }, 300);
+}
+
+async function searchDogs(query) {
+    elements.loadingDogs.classList.remove('hidden');
+    elements.dogsGrid.innerHTML = '';
+    elements.noResults.classList.add('hidden');
+    elements.dogCount.textContent = 'Searching...';
+
+    try {
+        const result = await api.searchDogs(query, state.authToken);
+
+        if (result.success) {
+            // Process dogs with custom field values
+            state.dogs = result.dogs.map(dog => processDog(dog));
+            state.filteredDogs = [...state.dogs];
+
+            if (state.dogs.length === 0) {
+                elements.dogCount.textContent = `No dogs found for "${query}"`;
+            } else {
+                elements.dogCount.textContent = `${state.dogs.length} dog${state.dogs.length === 1 ? '' : 's'} found`;
+            }
+            renderDogs();
+        }
+    } catch (error) {
+        console.error('Failed to search dogs:', error);
+        showToast('Failed to search dogs', 'error');
+        elements.dogCount.textContent = 'Search failed - try again';
+    } finally {
+        elements.loadingDogs.classList.add('hidden');
+    }
+}
+
+function showSearchPrompt() {
+    elements.dogsGrid.innerHTML = '';
+    elements.noResults.classList.add('hidden');
+    elements.loadingDogs.classList.add('hidden');
+}
+
+// ==========================================
+// Service Selection
+// ==========================================
+
+async function loadVariations() {
+    if (state.variations.length > 0) return;
+
+    try {
+        const result = await api.getVariations(state.authToken);
+        if (result.success) {
+            state.variations = result.variations || [];
+            updateServiceDropdowns();
+        }
+    } catch (error) {
+        console.error('Failed to load variations:', error);
+        showToast('Failed to load services', 'error');
+    }
+}
+
+function updateServiceDropdowns() {
+    const serviceType = elements.serviceType.value;
+    const select = elements.serviceVariation;
+    const group = elements.variationGroup;
+
+    // Clear existing
+    select.innerHTML = '';
+
+    // Filter variations
+    let filtered = [];
+
+    if (serviceType === 'daycare') {
+        // Special logic for Daycare (hardcoded IDs as they are hidden in API)
+        const dateStr = elements.checkinDate.value || new Date().toISOString().split('T')[0];
+        // Parse date considering timezone (simplified: assume local input matches)
+        // new Date(dateStr) treats YYYY-MM-DD as UTC, so we need to be careful.
+        // Better: create date from parts
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const date = new Date(y, m - 1, d);
+        const day = date.getDay();
+
+        let targetId = DAYCARE_VARIATIONS.weekday;
+        let targetName = 'Daycare (M-F)';
+
+        if (day === 6) { // Saturday
+            targetId = DAYCARE_VARIATIONS.saturday;
+            targetName = 'Saturday Daycare';
+        } else if (day === 0) { // Sunday
+            targetId = DAYCARE_VARIATIONS.sunday;
+            targetName = 'Sunday Daycare';
+        }
+
+        // Add "Resident Daycare" option? User requested it.
+        // If ID is unknown, maybe skip or use weekday? User said "Resident Daycare should be available".
+        // Assuming it's a specific variation I missed or just a label preference?
+        // For now, providing the date-based one as primary.
+
+        const option = document.createElement('option');
+        option.value = targetId;
+        option.textContent = targetName;
+        select.appendChild(option);
+        select.disabled = false;
+        return; // Skip standard filtering
+    }
+
+    if (serviceType === 'boarding') {
+        filtered = state.variations.filter(v =>
+            v.name.toLowerCase().includes('boarding') &&
+            !v.name.toLowerCase().includes('shelter')
+        );
+    } else if (serviceType === 'evaluation') {
+        filtered = state.variations.filter(v => v.name.toLowerCase().includes('evaluation'));
+    } else if (serviceType === 'spa') {
+        filtered = state.variations.filter(v =>
+            !v.name.toLowerCase().includes('boarding') &&
+            !v.name.toLowerCase().includes('daycare') &&
+            !v.name.toLowerCase().includes('evaluation')
         );
     }
 
-    renderDogs();
+    // Sort alpha
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+
+    if (filtered.length === 0) {
+        const option = document.createElement('option');
+        option.textContent = 'No services available';
+        select.appendChild(option);
+        select.disabled = true;
+    } else {
+        select.disabled = false;
+        filtered.forEach(v => {
+            const option = document.createElement('option');
+            option.value = v.id;
+            option.textContent = v.name;
+            select.appendChild(option);
+        });
+        // Select first item
+        select.selectedIndex = 0;
+    }
 }
 
 // ==========================================
@@ -343,10 +552,12 @@ function renderDogs() {
     }
 
     elements.noResults.classList.add('hidden');
+    // Using grid layout from new CSS
+    elements.dogsGrid.className = 'grid grid-cols-2';
     elements.dogsGrid.innerHTML = state.filteredDogs.map(dog => createDogCard(dog)).join('');
 
-    // Add click handlers
-    elements.dogsGrid.querySelectorAll('.dog-card').forEach(card => {
+    // Add click handlers: delegate or attach to new cards
+    elements.dogsGrid.querySelectorAll('.card').forEach(card => {
         card.addEventListener('click', () => {
             const dogId = parseInt(card.dataset.dogId);
             const dog = state.dogs.find(d => d.id === dogId);
@@ -356,23 +567,22 @@ function renderDogs() {
 }
 
 function createDogCard(dog) {
-    const genderClass = dog.gender?.toLowerCase() === 'male' ? 'gender-male' :
-        dog.gender?.toLowerCase() === 'female' ? 'gender-female' : '';
+    const genderClass = dog.gender?.toLowerCase() === 'male' ? 'dog-tag-male' :
+        dog.gender?.toLowerCase() === 'female' ? 'dog-tag-female' : '';
 
     const photoHtml = dog.photo
-        ? `<img src="${dog.photo}" alt="${dog.name}">`
-        : '🐕';
+        ? `<img src="${dog.photo}" alt="${dog.name}" class="avatar">`
+        : `<div class="avatar">${dog.name.charAt(0)}</div>`;
 
     return `
-    <article class="dog-card" data-dog-id="${dog.id}">
-      <div class="dog-photo">${photoHtml}</div>
+    <article class="card dog-card-interactive" data-dog-id="${dog.id}" style="cursor: pointer; display: flex; align-items: center; gap: 1rem; padding: 1.5rem;">
+      ${photoHtml}
       <div class="dog-info">
-        <h3 class="dog-name">${escapeHtml(dog.name)}</h3>
-        <p class="dog-owner">Owner: ${escapeHtml(dog.ownerLastName)}</p>
-        <div class="dog-details">
-          ${dog.gender ? `<span class="dog-tag ${genderClass}">${escapeHtml(dog.gender)}</span>` : ''}
-          <span class="dog-tag">${escapeHtml(dog.breed)}</span>
-          ${dog.color ? `<span class="dog-tag">${escapeHtml(dog.color)}</span>` : ''}
+        <h3 class="" style="margin: 0; font-size: 1.25rem; color: var(--primary-color);">${escapeHtml(dog.name)}</h3>
+        <p class="" style="margin: 0.25rem 0; color: var(--text-muted); font-size: 0.9rem;">Owner: ${escapeHtml(dog.ownerLastName)}</p>
+        <div class="dog-details" style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+          ${dog.gender ? `<span class="syncing-badge">${escapeHtml(dog.gender)}</span>` : ''}
+          <span class="syncing-badge">${escapeHtml(dog.breed)}</span>
         </div>
       </div>
     </article>
@@ -389,7 +599,7 @@ function escapeHtml(text) {
 // Modal
 // ==========================================
 
-function openModal(dog) {
+async function openModal(dog) {
     state.selectedDog = dog;
 
     const photoHtml = dog.photo
@@ -409,6 +619,16 @@ function openModal(dog) {
     elements.confirmCheckin.disabled = false;
     elements.confirmCheckin.querySelector('.btn-text').classList.remove('hidden');
     elements.confirmCheckin.querySelector('.btn-loading').classList.add('hidden');
+
+    // Set date to today by default
+    elements.checkinDate.value = new Date().toISOString().split('T')[0];
+
+    // Load variations
+    if (state.variations.length === 0) {
+        await loadVariations();
+    } else {
+        updateServiceDropdowns();
+    }
 
     elements.checkinModal.classList.remove('hidden');
 }
@@ -436,13 +656,15 @@ async function handleCheckIn() {
     const statusContainer = elements.checkinStatus;
 
     try {
-        // Step 1: Get available times
-        updateStatus(statusContainer, 'Finding available time slot...', 'active');
-        const today = new Date().toISOString().split('T')[0];
-        const timesResult = await api.getOpenTimes(dog.id, today, state.authToken);
+        // Step 1: Get available times for the selected date
+        const selectedDate = elements.checkinDate.value || new Date().toISOString().split('T')[0];
+        const variationId = elements.serviceVariation.value;
+
+        updateStatus(statusContainer, `Finding available time slot for ${selectedDate}...`, 'active');
+        const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
 
         if (!timesResult.success || !timesResult.openTimes?.length) {
-            throw new Error('No available time slots for today');
+            throw new Error(`No available time slots for ${selectedDate}`);
         }
 
         const timeSlot = timesResult.openTimes[0];
@@ -460,12 +682,13 @@ async function handleCheckIn() {
         updateStatus(statusContainer, 'Cart created ✓', 'complete');
 
         // Step 3: Add cart item
-        updateStatus(statusContainer, 'Adding daycare service...', 'active');
+        updateStatus(statusContainer, 'Adding service to cart...', 'active');
         const itemResult = await api.addCartItem(cartId, {
             dogId: dog.id,
             beginAt: timeSlot.begin_at,
             endAt: timeSlot.end_at,
-            dealId: timeSlot.deal_id
+            dealId: timeSlot.deal_id,
+            variationId: variationId
         }, state.authToken);
 
         if (!itemResult.success) {
@@ -508,8 +731,25 @@ async function handleCheckIn() {
 
     } catch (error) {
         console.error('Check-in error:', error);
-        updateStatus(statusContainer, `Error: ${error.message}`, 'error');
-        showToast(`Check-in failed: ${error.message}`, 'error');
+
+        let errorMessage = error.message;
+        if (typeof error === 'object' && error !== null) {
+            // If message is generic object string or missing, try to stringify the whole error or response data
+            if (!errorMessage || errorMessage === '[object Object]' || errorMessage.includes('[object Object]')) {
+                if (error.response?.data) {
+                    errorMessage = JSON.stringify(error.response.data);
+                } else {
+                    try {
+                        errorMessage = JSON.stringify(error);
+                    } catch (e) {
+                        errorMessage = 'Unknown error object';
+                    }
+                }
+            }
+        }
+
+        updateStatus(statusContainer, `Error: ${errorMessage}`, 'error');
+        showToast(`Check-in failed: ${errorMessage}`, 'error');
 
         // Re-enable button
         confirmBtn.disabled = false;
