@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
@@ -23,7 +24,7 @@ const DAYCARE_VARIATIONS = {
 };
 
 // Get the appropriate daycare variation ID based on the day
-function getDaycareVariationId(date = new Date()) {
+function getDaycareVariationId(date: Date = new Date()): string {
     const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
 
     if (dayOfWeek === 6) {
@@ -41,12 +42,12 @@ app.use(express.json());
 
 // Helper to make MyTime API requests
 // Uses API key by default, or user auth token for user-specific requests
-async function mytimeRequest(method, endpoint, data = null, authToken = null) {
+async function mytimeRequest(method: string, endpoint: string, data: any = null, authToken: string | null = null): Promise<any> {
     const url = `${MYTIME_BASE_URL}/api/mkp/v1${endpoint}`;
-    const headers = {
+    const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': authToken || MYTIME_API_KEY
+        'Authorization': authToken || MYTIME_API_KEY || ''
     };
 
     try {
@@ -57,7 +58,7 @@ async function mytimeRequest(method, endpoint, data = null, authToken = null) {
             headers
         });
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`MyTime API Error: ${method} ${endpoint}`, error.response?.data || error.message);
         throw error;
     }
@@ -65,12 +66,12 @@ async function mytimeRequest(method, endpoint, data = null, authToken = null) {
 
 // Helper to make Partner API requests (for location-wide access to clients/pets)
 // Uses X-Api-Key header and partners-api.mytime.com host
-async function partnerApiRequest(method, endpoint, params = null) {
+async function partnerApiRequest(method: string, endpoint: string, params: any = null): Promise<any> {
     const url = `https://partners-api.mytime.com/api${endpoint}`;
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Api-Key': MYTIME_API_KEY
+        'X-Api-Key': MYTIME_API_KEY || ''
     };
 
     try {
@@ -81,7 +82,7 @@ async function partnerApiRequest(method, endpoint, params = null) {
             headers
         });
         return response.data;
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Partner API Error: ${method} ${endpoint}`, error.response?.data || error.message);
         throw error;
     }
@@ -90,7 +91,7 @@ async function partnerApiRequest(method, endpoint, params = null) {
 // === API ROUTES ===
 
 // Login - authenticate staff
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
         console.log(`Login attempt for: ${email}`);
@@ -100,7 +101,7 @@ app.post('/api/auth/login', async (req, res) => {
         const result = await mytimeRequest('POST', '/sessions', {
             email,
             password,
-            company_id: parseInt(COMPANY_ID)
+            company_id: COMPANY_ID ? parseInt(COMPANY_ID) : undefined
         });
 
         console.log(`Login successful for user: ${result.user?.id}`);
@@ -110,7 +111,7 @@ app.post('/api/auth/login', async (req, res) => {
             user: result.user,
             token: result.user?.authentication_token
         });
-    } catch (error) {
+    } catch (error: any) {
         const errorData = error.response ? error.response.data : { message: error.message };
         console.error('Login failed:', JSON.stringify(errorData));
         res.status(error.response?.status || 500).json({
@@ -121,7 +122,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Get company data (includes custom fields for dog attributes)
-app.get('/api/company', async (req, res) => {
+app.get('/api/company', async (req: Request, res: Response) => {
     try {
         const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}?include_custom_fields=true`);
         res.json({
@@ -130,7 +131,7 @@ app.get('/api/company', async (req, res) => {
             locationId: LOCATION_ID,
             daycareVariationId: getDaycareVariationId()
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch company data'
@@ -139,14 +140,14 @@ app.get('/api/company', async (req, res) => {
 });
 
 // Get all locations for the company
-app.get('/api/locations', async (req, res) => {
+app.get('/api/locations', async (req: Request, res: Response) => {
     try {
         const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/locations`);
         res.json({
             success: true,
             locations: result.locations || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch locations'
@@ -155,7 +156,7 @@ app.get('/api/locations', async (req, res) => {
 });
 
 // Get deals (services) for a location
-app.get('/api/deals', async (req, res) => {
+app.get('/api/deals', async (req: Request, res: Response) => {
     try {
         const { locationId } = req.query;
         const locId = locationId || LOCATION_ID;
@@ -169,7 +170,7 @@ app.get('/api/deals', async (req, res) => {
             success: true,
             deals: result.deals || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch deals'
@@ -178,14 +179,14 @@ app.get('/api/deals', async (req, res) => {
 });
 
 // Get all deals for the company (no location filter)
-app.get('/api/deals/all', async (req, res) => {
+app.get('/api/deals/all', async (req: Request, res: Response) => {
     try {
         const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/deals`);
         res.json({
             success: true,
             deals: result.deals || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch deals'
@@ -194,7 +195,7 @@ app.get('/api/deals/all', async (req, res) => {
 });
 
 // Get all variations for the company
-app.get('/api/variations', async (req, res) => {
+app.get('/api/variations', async (req: Request, res: Response) => {
     try {
         const { locationId, noLocation } = req.query;
 
@@ -213,7 +214,7 @@ app.get('/api/variations', async (req, res) => {
             success: true,
             variations: result.variations || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch variations'
@@ -222,7 +223,7 @@ app.get('/api/variations', async (req, res) => {
 });
 
 // Get all dogs (pets/children) for authenticated user
-app.get('/api/dogs', async (req, res) => {
+app.get('/api/dogs', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         if (!authToken) {
@@ -234,7 +235,7 @@ app.get('/api/dogs', async (req, res) => {
             success: true,
             dogs: result.children || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch dogs'
@@ -244,7 +245,7 @@ app.get('/api/dogs', async (req, res) => {
 });
 
 // Get employees for location
-app.get('/api/employees', async (req, res) => {
+app.get('/api/employees', async (req: Request, res: Response) => {
     try {
         const { locationId } = req.query;
         const locId = locationId || LOCATION_ID;
@@ -253,7 +254,7 @@ app.get('/api/employees', async (req, res) => {
             success: true,
             employees: result.employees || []
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch employees'
@@ -263,7 +264,7 @@ app.get('/api/employees', async (req, res) => {
 
 
 // Search dogs by name using Partner API (location-wide access)
-app.get('/api/dogs/search', async (req, res) => {
+app.get('/api/dogs/search', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { q } = req.query;
@@ -272,20 +273,20 @@ app.get('/api/dogs/search', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Authorization required' });
         }
 
-        if (!q || q.trim().length < 2) {
+        if (typeof q !== 'string' || q.trim().length < 2) {
             return res.status(400).json({ success: false, error: 'Search query must be at least 2 characters' });
         }
 
         const query = q.trim();
         const queryLower = query.toLowerCase();
-        let allDogs = [];
+        let allDogs: any[] = [];
 
         // Get clients at this location with their children
         // Note: We don't use the search parameter because it only searches client names, not pet names
         // We filter locally to support searching by pet name
         const clientsResult = await partnerApiRequest('GET', '/clients', {
             include_children: true,
-            location_mytime_ids: [parseInt(LOCATION_ID)],
+            location_mytime_ids: LOCATION_ID ? [parseInt(LOCATION_ID)] : [],
             per_page: 20
         });
 
@@ -321,7 +322,7 @@ app.get('/api/dogs/search', async (req, res) => {
                     }
                 }
             }
-        } catch (e) {
+        } catch (e: any) {
             // /children endpoint may not support search, that's ok
             console.log('Children search:', e.response?.data?.errors || e.message);
         }
@@ -334,10 +335,10 @@ app.get('/api/dogs/search', async (req, res) => {
         });
 
         // Sort: prefer dogs from clients with preferred_location matching our location
-        const locationId = parseInt(LOCATION_ID);
+        const locationIdInt = LOCATION_ID ? parseInt(LOCATION_ID) : 0;
         matchedDogs.sort((a, b) => {
-            const aPreferred = a.preferred_location_mytime_id === locationId ? 1 : 0;
-            const bPreferred = b.preferred_location_mytime_id === locationId ? 1 : 0;
+            const aPreferred = a.preferred_location_mytime_id === locationIdInt ? 1 : 0;
+            const bPreferred = b.preferred_location_mytime_id === locationIdInt ? 1 : 0;
             return bPreferred - aPreferred; // Higher priority first
         });
 
@@ -350,7 +351,7 @@ app.get('/api/dogs/search', async (req, res) => {
             success: true,
             dogs: matchedDogs
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Search error:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             success: false,
@@ -360,28 +361,28 @@ app.get('/api/dogs/search', async (req, res) => {
 });
 
 // Get open times for daycare on a specific date
-app.get('/api/open-times', async (req, res) => {
+app.get('/api/open-times', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { dogId, date, variationId } = req.query;
         console.log(`[open_times] REQUEST:`, req.query);
 
         // ... existing date parsing ...
-        const selectedDate = date || new Date().toISOString().split('T')[0];
+        const selectedDate = (typeof date === 'string' ? date : null) || new Date().toISOString().split('T')[0];
         const [year, month, day] = selectedDate.split('-').map(Number);
         const localDate = new Date(year, month - 1, day);
 
-        const targetVariationId = variationId || getDaycareVariationId(localDate);
+        const targetVariationId = (typeof variationId === 'string' ? variationId : null) || getDaycareVariationId(localDate);
         console.log(`[open_times] Target variation: ${targetVariationId} (date: ${selectedDate})`);
 
         const params = new URLSearchParams({
-            location_id: LOCATION_ID,
+            location_id: LOCATION_ID || '',
             variation_ids: targetVariationId,
             is_existing_customer: 'true',
             date: selectedDate
         });
 
-        if (dogId) params.append('child_id', dogId);
+        if (dogId) params.append('child_id', String(dogId));
 
         console.log(`[open_times] Calling MyTime: ${params.toString()}`);
         const result = await mytimeRequest('GET', `/open_times?${params.toString()}`, null, authToken);
@@ -441,7 +442,7 @@ app.get('/api/open-times', async (req, res) => {
             success: true,
             openTimes: openTimes
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch open times'
@@ -450,7 +451,7 @@ app.get('/api/open-times', async (req, res) => {
 });
 
 // Create a new cart
-app.post('/api/cart', async (req, res) => {
+app.post('/api/cart', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { userId } = req.body;
@@ -463,7 +464,7 @@ app.post('/api/cart', async (req, res) => {
             success: true,
             cart: result.cart
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to create cart'
@@ -472,7 +473,7 @@ app.post('/api/cart', async (req, res) => {
 });
 
 // Add item to cart
-app.post('/api/cart/:cartId/items', async (req, res) => {
+app.post('/api/cart/:cartId/items', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { cartId } = req.params;
@@ -488,7 +489,7 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
         }
 
         const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, {
-            location_id: parseInt(LOCATION_ID),
+            location_id: LOCATION_ID ? parseInt(LOCATION_ID) : undefined,
             variation_ids: variationId || getDaycareVariationId(bookingDate),
             deal_id: dealId,
             employee_ids: employeeIds || '',
@@ -505,7 +506,7 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
             cartItem: result.cart_item,
             cart: result.cart
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to add cart item'
@@ -514,7 +515,7 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
 });
 
 // Update cart (assign to user)
-app.put('/api/cart/:cartId', async (req, res) => {
+app.put('/api/cart/:cartId', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { cartId } = req.params;
@@ -528,7 +529,7 @@ app.put('/api/cart/:cartId', async (req, res) => {
             success: true,
             cart: result.cart
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to update cart'
@@ -537,7 +538,7 @@ app.put('/api/cart/:cartId', async (req, res) => {
 });
 
 // Create purchase (complete booking)
-app.post('/api/purchase', async (req, res) => {
+app.post('/api/purchase', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { cartId, dogId } = req.body;
@@ -556,7 +557,7 @@ app.post('/api/purchase', async (req, res) => {
             success: true,
             purchase: result.purchase
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Create purchase error:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             success: false,
@@ -566,7 +567,7 @@ app.post('/api/purchase', async (req, res) => {
 });
 
 // Check in an appointment
-app.put('/api/check-in/:appointmentId', async (req, res) => {
+app.put('/api/check-in/:appointmentId', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
         const { appointmentId } = req.params;
@@ -577,7 +578,7 @@ app.put('/api/check-in/:appointmentId', async (req, res) => {
             success: true,
             appointment: result
         });
-    } catch (error) {
+    } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to check in'
@@ -586,11 +587,11 @@ app.put('/api/check-in/:appointmentId', async (req, res) => {
 });
 
 // Diagnostic: List all employees to verify emails
-app.get('/api/debug/employees', async (req, res) => {
+app.get('/api/debug/employees', async (req: Request, res: Response) => {
     try {
         console.log('Fetching employee list...');
         const result = await partnerApiRequest('GET', '/employees');
-        const employees = result.employees || [];
+        const employees: any[] = result.employees || [];
 
         res.json({
             success: true,
@@ -602,7 +603,7 @@ app.get('/api/debug/employees', async (req, res) => {
                 active: e.active
             }))
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Failed to fetch employees:', error.message);
         res.status(500).json({
             success: false,
@@ -613,12 +614,12 @@ app.get('/api/debug/employees', async (req, res) => {
 });
 
 // Diagnostic: Verify API Key and IDs
-app.get('/api/debug/verify-config', async (req, res) => {
+app.get('/api/debug/verify-config', async (req: Request, res: Response) => {
     try {
         console.log('Running diagnostic check...');
         // The Partner API /locations endpoint doesn't require a company_id
         const result = await partnerApiRequest('GET', '/locations');
-        const locations = result.locations || result.clients || [];
+        const locations: any[] = result.locations || result.clients || [];
 
         const bradenton = locations.find(l =>
             l.name?.toLowerCase().includes('bradenton') ||
@@ -638,7 +639,7 @@ app.get('/api/debug/verify-config', async (req, res) => {
             } : 'Bradenton not found in your account locations',
             allAccountLocations: locations.map(l => ({ name: l.name, id: l.mytime_id, company_id: l.company_id }))
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Diagnostic failed:', error.message);
         res.status(500).json({
             success: false,
@@ -649,7 +650,7 @@ app.get('/api/debug/verify-config', async (req, res) => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: Request, res: Response) => {
     res.json({
         status: 'ok',
         config: {

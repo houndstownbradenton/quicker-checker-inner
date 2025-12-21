@@ -3,7 +3,8 @@
  * Fast daycare check-in for Hounds Town Bradenton
  */
 
-import * as api from './api/client.js';
+import * as api from './api/client';
+import { User, Dog, Variation } from './api/client';
 
 const DAYCARE_VARIATIONS = {
     weekday: '91629241',      // Standard Daycare (Mon-Fri)
@@ -15,7 +16,23 @@ const DAYCARE_VARIATIONS = {
 // State
 // ==========================================
 
-let state = {
+interface AppState {
+    user: User | null;
+    authToken: string | null;
+    company: any | null;
+    dogs: Dog[];
+    filteredDogs: Dog[];
+    selectedDog: Dog | null;
+    customFields: {
+        petNameFieldId: number | null;
+        petBreedFieldId: number | null;
+        petColorFieldId: number | null;
+        petGenderFieldId: number | null;
+    };
+    variations: Variation[];
+}
+
+let state: AppState = {
     user: null,
     authToken: null,
     company: null,
@@ -37,43 +54,43 @@ let state = {
 
 const elements = {
     // Screens
-    loginScreen: document.getElementById('login-screen'),
-    mainScreen: document.getElementById('main-screen'),
+    loginScreen: document.getElementById('login-screen') as HTMLElement,
+    mainScreen: document.getElementById('main-screen') as HTMLElement,
 
     // Login
-    loginForm: document.getElementById('login-form'),
-    emailInput: document.getElementById('email'),
-    passwordInput: document.getElementById('password'),
-    loginError: document.getElementById('login-error'),
+    loginForm: document.getElementById('login-form') as HTMLFormElement,
+    emailInput: document.getElementById('email') as HTMLInputElement,
+    passwordInput: document.getElementById('password') as HTMLInputElement,
+    loginError: document.getElementById('login-error') as HTMLElement,
 
     // Header
-    userName: document.getElementById('user-name'),
-    logoutBtn: document.getElementById('logout-btn'),
+    userName: document.getElementById('user-name') as HTMLElement,
+    logoutBtn: document.getElementById('logout-btn') as HTMLButtonElement,
 
     // Search
-    dogSearch: document.getElementById('dog-search'),
-    dogCount: document.getElementById('dog-count'),
+    dogSearch: document.getElementById('dog-search') as HTMLInputElement,
+    dogCount: document.getElementById('dog-count') as HTMLElement,
 
     // Dogs Grid
-    dogsGrid: document.getElementById('dogs-grid'),
-    noResults: document.getElementById('no-results'),
-    loadingDogs: document.getElementById('loading-dogs'),
+    dogsGrid: document.getElementById('dogs-grid') as HTMLElement,
+    noResults: document.getElementById('no-results') as HTMLElement,
+    loadingDogs: document.getElementById('loading-dogs') as HTMLElement,
 
     // Modal
-    checkinModal: document.getElementById('checkin-modal'),
-    modalClose: document.getElementById('modal-close'),
-    selectedDogInfo: document.getElementById('selected-dog-info'),
-    checkinDate: document.getElementById('checkin-date'),
-    checkinStatus: document.getElementById('checkin-status'),
-    cancelCheckin: document.getElementById('cancel-checkin'),
-    confirmCheckin: document.getElementById('confirm-checkin'),
-    serviceType: document.getElementById('service-type'),
-    serviceVariation: document.getElementById('service-variation'),
-    variationGroup: document.getElementById('variation-group'),
+    checkinModal: document.getElementById('checkin-modal') as HTMLElement,
+    modalClose: document.getElementById('modal-close') as HTMLButtonElement,
+    selectedDogInfo: document.getElementById('selected-dog-info') as HTMLElement,
+    checkinDate: document.getElementById('checkin-date') as HTMLInputElement,
+    checkinStatus: document.getElementById('checkin-status') as HTMLElement,
+    cancelCheckin: document.getElementById('cancel-checkin') as HTMLButtonElement,
+    confirmCheckin: document.getElementById('confirm-checkin') as HTMLButtonElement,
+    serviceType: document.getElementById('service-type') as HTMLSelectElement,
+    serviceVariation: document.getElementById('service-variation') as HTMLSelectElement,
+    variationGroup: document.getElementById('variation-group') as HTMLElement,
 
     // Toast
-    toast: document.getElementById('toast'),
-    toastMessage: document.getElementById('toast-message')
+    toast: document.getElementById('toast') as HTMLElement,
+    toastMessage: document.getElementById('toast-message') as HTMLElement
 };
 
 // ==========================================
@@ -99,54 +116,68 @@ async function init() {
 
 function setupEventListeners() {
     // Login form
-    elements.loginForm.addEventListener('submit', handleLogin);
+    if (elements.loginForm) {
+        elements.loginForm.addEventListener('submit', handleLogin);
+    }
 
     // Logout
-    elements.logoutBtn.addEventListener('click', handleLogout);
+    if (elements.logoutBtn) {
+        elements.logoutBtn.addEventListener('click', handleLogout);
+    }
 
     // Search
-    elements.dogSearch.addEventListener('input', handleSearch);
+    if (elements.dogSearch) {
+        elements.dogSearch.addEventListener('input', handleSearch);
+    }
 
     // Modal
-    elements.modalClose.addEventListener('click', closeModal);
-    elements.cancelCheckin.addEventListener('click', closeModal);
-    elements.confirmCheckin.addEventListener('click', handleCheckIn);
+    if (elements.modalClose) elements.modalClose.addEventListener('click', closeModal);
+    if (elements.cancelCheckin) elements.cancelCheckin.addEventListener('click', closeModal);
+    if (elements.confirmCheckin) elements.confirmCheckin.addEventListener('click', handleCheckIn);
 
     // Service Selection
-    elements.serviceType.addEventListener('change', updateServiceDropdowns);
-    elements.checkinDate.addEventListener('change', () => {
-        if (elements.serviceType.value === 'daycare') {
-            updateServiceDropdowns();
-        }
-    });
-    elements.serviceVariation.addEventListener('change', () => {
-        // Trigger availability check if date is selected?
-        // For now just letting the user click confirm is fine
-    });
+    if (elements.serviceType) elements.serviceType.addEventListener('change', updateServiceDropdowns);
+    if (elements.checkinDate) {
+        elements.checkinDate.addEventListener('change', () => {
+            if (elements.serviceType.value === 'daycare') {
+                updateServiceDropdowns();
+            }
+        });
+    }
+    if (elements.serviceVariation) {
+        elements.serviceVariation.addEventListener('change', () => {
+            // Trigger availability check if date is selected?
+            // For now just letting the user click confirm is fine
+        });
+    }
 
     // Close modal on backdrop click
-    elements.checkinModal.addEventListener('click', (e) => {
-        if (e.target === elements.checkinModal) {
-            closeModal();
-        }
-    });
+    if (elements.checkinModal) {
+        elements.checkinModal.addEventListener('click', (e) => {
+            if (e.target === elements.checkinModal) {
+                closeModal();
+            }
+        });
+    }
 }
 
 // ==========================================
 // Authentication
 // ==========================================
 
-async function handleLogin(e) {
+async function handleLogin(e: Event) {
     e.preventDefault();
 
     const email = elements.emailInput.value;
     const password = elements.passwordInput.value;
 
     // Show loading state
-    const submitBtn = elements.loginForm.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.querySelector('.btn-text').classList.add('hidden');
-    submitBtn.querySelector('.btn-loading').classList.remove('hidden');
+    const submitBtn = elements.loginForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.querySelector('.btn-text')?.classList.add('hidden');
+        submitBtn.querySelector('.btn-loading')?.classList.remove('hidden');
+    }
     elements.loginError.classList.add('hidden');
 
     try {
@@ -154,19 +185,19 @@ async function handleLogin(e) {
 
         if (result.success && result.user) {
             state.user = result.user;
-            state.authToken = result.token;
+            state.authToken = result.token || null;
 
             // Save to session
-            sessionStorage.setItem('authToken', state.authToken);
+            if (state.authToken) sessionStorage.setItem('authToken', state.authToken);
             sessionStorage.setItem('user', JSON.stringify(state.user));
 
             await showMainScreen();
         } else {
             throw new Error('Login failed');
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error('Login error:', error);
-        
+
         let displayError = 'Login failed. Please check your credentials.';
         if (error.message) {
             if (error.message.includes('wrong email or password')) {
@@ -175,13 +206,15 @@ async function handleLogin(e) {
                 displayError = error.message;
             }
         }
-        
+
         elements.loginError.textContent = displayError;
         elements.loginError.classList.remove('hidden');
     } finally {
-        submitBtn.disabled = false;
-        submitBtn.querySelector('.btn-text').classList.remove('hidden');
-        submitBtn.querySelector('.btn-loading').classList.add('hidden');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.querySelector('.btn-text')?.classList.remove('hidden');
+            submitBtn.querySelector('.btn-loading')?.classList.add('hidden');
+        }
     }
 }
 
@@ -239,7 +272,7 @@ async function loadCompanyData() {
 
             // Find custom field IDs for pet attributes
             if (state.company?.custom_fields) {
-                const customFields = state.company.custom_fields;
+                const customFields: any[] = state.company.custom_fields;
 
                 // Find pet name field
                 const petNameField = customFields.find(cf =>
@@ -273,36 +306,15 @@ async function loadCompanyData() {
     }
 }
 
-async function loadDogs() {
-    elements.loadingDogs.classList.remove('hidden');
-    elements.dogsGrid.innerHTML = '';
 
-    try {
-        const result = await api.getDogs(state.authToken);
 
-        if (result.success) {
-            // Process dogs with custom field values
-            state.dogs = result.dogs.map(dog => processDog(dog));
-            state.filteredDogs = [...state.dogs];
-
-            elements.dogCount.textContent = `${state.dogs.length} dogs loaded`;
-            renderDogs();
-        }
-    } catch (error) {
-        console.error('Failed to load dogs:', error);
-        showToast('Failed to load dogs', 'error');
-    } finally {
-        elements.loadingDogs.classList.add('hidden');
-    }
-}
-
-function processDog(dog) {
+function processDog(dog: any): Dog {
     // Extract values from custom fields or direct fields (Partner API)
-    let name = null;
-    let breed = null;
-    let color = null;
-    let gender = null;
-    let photo = null;
+    let name: string | null = null;
+    let breed: string | null = null;
+    let color: string | null = null;
+    let gender: string | null = null;
+    let photo: any = null;
     let ownerName = 'Unknown';
 
     // Partner API provides these directly on the dog object
@@ -325,25 +337,25 @@ function processDog(dog) {
 
         // Get name
         if (state.customFields.petNameFieldId) {
-            const nameField = values.find(v => v.custom_field_id === state.customFields.petNameFieldId);
+            const nameField = values.find((v: any) => v.custom_field_id === state.customFields.petNameFieldId);
             if (nameField) name = nameField.value;
         }
 
         // Get breed
         if (!breed && state.customFields.petBreedFieldId) {
-            const breedField = values.find(v => v.custom_field_id === state.customFields.petBreedFieldId);
+            const breedField = values.find((v: any) => v.custom_field_id === state.customFields.petBreedFieldId);
             if (breedField) breed = breedField.value;
         }
 
         // Get color
         if (state.customFields.petColorFieldId) {
-            const colorField = values.find(v => v.custom_field_id === state.customFields.petColorFieldId);
+            const colorField = values.find((v: any) => v.custom_field_id === state.customFields.petColorFieldId);
             if (colorField) color = colorField.value;
         }
 
         // Get gender
         if (!gender && state.customFields.petGenderFieldId) {
-            const genderField = values.find(v => v.custom_field_id === state.customFields.petGenderFieldId);
+            const genderField = values.find((v: any) => v.custom_field_id === state.customFields.petGenderFieldId);
             if (genderField) gender = genderField.value;
         }
     }
@@ -368,13 +380,14 @@ function processDog(dog) {
 
     return {
         id: dogId,
-        name,
-        ownerLastName: ownerName,
+        name: name || 'Unknown',
+        owner_last_name: ownerName,
         breed: breed || 'Unknown breed',
-        color: color || null,
-        gender: gender || null,
+        color: color || undefined,
+        gender: gender || undefined,
         photo,
-        raw: dog
+        // Using `as any` to attach the original generic raw data if needed
+        ...dog
     };
 }
 
@@ -383,10 +396,11 @@ function processDog(dog) {
 // ==========================================
 
 // Debounce timer
-let searchTimeout = null;
+let searchTimeout: any = null;
 
-function handleSearch(e) {
-    const query = e.target.value.trim();
+function handleSearch(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const query = target.value.trim();
 
     // Clear previous timeout
     if (searchTimeout) {
@@ -414,7 +428,9 @@ function handleSearch(e) {
     }, 300);
 }
 
-async function searchDogs(query) {
+async function searchDogs(query: string) {
+    if (!state.authToken) return;
+
     elements.loadingDogs.classList.remove('hidden');
     elements.dogsGrid.innerHTML = '';
     elements.noResults.classList.add('hidden');
@@ -456,6 +472,7 @@ function showSearchPrompt() {
 
 async function loadVariations() {
     if (state.variations.length > 0) return;
+    if (!state.authToken) return;
 
     try {
         const result = await api.getVariations(state.authToken);
@@ -472,20 +489,18 @@ async function loadVariations() {
 function updateServiceDropdowns() {
     const serviceType = elements.serviceType.value;
     const select = elements.serviceVariation;
-    const group = elements.variationGroup;
+    // const group = elements.variationGroup; // Unused for now
 
     // Clear existing
     select.innerHTML = '';
 
     // Filter variations
-    let filtered = [];
+    let filtered: Variation[] = [];
 
     if (serviceType === 'daycare') {
         // Special logic for Daycare (hardcoded IDs as they are hidden in API)
         const dateStr = elements.checkinDate.value || new Date().toISOString().split('T')[0];
         // Parse date considering timezone (simplified: assume local input matches)
-        // new Date(dateStr) treats YYYY-MM-DD as UTC, so we need to be careful.
-        // Better: create date from parts
         const [y, m, d] = dateStr.split('-').map(Number);
         const date = new Date(y, m - 1, d);
         const day = date.getDay();
@@ -501,11 +516,6 @@ function updateServiceDropdowns() {
             targetName = 'Sunday Daycare';
         }
 
-        // Add "Resident Daycare" option? User requested it.
-        // If ID is unknown, maybe skip or use weekday? User said "Resident Daycare should be available".
-        // Assuming it's a specific variation I missed or just a label preference?
-        // For now, providing the date-based one as primary.
-
         const option = document.createElement('option');
         option.value = targetId;
         option.textContent = targetName;
@@ -519,14 +529,39 @@ function updateServiceDropdowns() {
             v.name.toLowerCase().includes('boarding') &&
             !v.name.toLowerCase().includes('shelter')
         );
+        elements.variationGroup.classList.remove('hidden');
     } else if (serviceType === 'evaluation') {
         filtered = state.variations.filter(v => v.name.toLowerCase().includes('evaluation'));
+        // Show all if no specific 'evaluation' keyword found? Or just assume setup is correct.
+        // If filtered is empty, maybe show all 'Daycare' style variations?
+        // For now, strict filtering is safer.
+        elements.variationGroup.classList.remove('hidden');
     } else if (serviceType === 'spa') {
         filtered = state.variations.filter(v =>
             !v.name.toLowerCase().includes('boarding') &&
             !v.name.toLowerCase().includes('daycare') &&
             !v.name.toLowerCase().includes('evaluation')
         );
+        elements.variationGroup.classList.remove('hidden');
+    }
+
+    // Toggle note for evaluation
+    let noteEl = document.getElementById('eval-note');
+    if (!noteEl) {
+        noteEl = document.createElement('div');
+        noteEl.id = 'eval-note';
+        noteEl.className = 'info-note hidden';
+        noteEl.style.marginTop = '0.5rem';
+        noteEl.style.fontSize = '0.9rem';
+        noteEl.style.color = 'var(--primary-color)';
+        elements.serviceType.parentNode?.insertBefore(noteEl, elements.serviceType.nextSibling);
+    }
+
+    if (serviceType === 'evaluation') {
+        noteEl.textContent = 'ℹ️ Evaluations are required for all new dogs before their first daycare or boarding stay.';
+        noteEl.classList.remove('hidden');
+    } else {
+        noteEl.classList.add('hidden');
     }
 
     // Sort alpha
@@ -541,7 +576,7 @@ function updateServiceDropdowns() {
         select.disabled = false;
         filtered.forEach(v => {
             const option = document.createElement('option');
-            option.value = v.id;
+            option.value = String(v.id);
             option.textContent = v.name;
             select.appendChild(option);
         });
@@ -566,40 +601,41 @@ function renderDogs() {
     elements.dogsGrid.className = 'grid grid-cols-2';
     elements.dogsGrid.innerHTML = state.filteredDogs.map(dog => createDogCard(dog)).join('');
 
-    // Add click handlers: delegate or attach to new cards
+    // Add click handlers
     elements.dogsGrid.querySelectorAll('.card').forEach(card => {
         card.addEventListener('click', () => {
-            const dogId = parseInt(card.dataset.dogId);
+            const htmlCard = card as HTMLElement;
+            const dogId = parseInt(htmlCard.dataset.dogId || '0');
             const dog = state.dogs.find(d => d.id === dogId);
             if (dog) openModal(dog);
         });
     });
 }
 
-function createDogCard(dog) {
-    const genderClass = dog.gender?.toLowerCase() === 'male' ? 'dog-tag-male' :
-        dog.gender?.toLowerCase() === 'female' ? 'dog-tag-female' : '';
-
+function createDogCard(dog: Dog) {
     const photoHtml = dog.photo
-        ? `<img src="${dog.photo}" alt="${dog.name}" class="avatar">`
+        ? `<img src="${typeof dog.photo === 'string' ? dog.photo : (dog.photo.medium || dog.photo.thumb || dog.photo.original)}" alt="${dog.name}" class="avatar">`
         : `<div class="avatar">${dog.name.charAt(0)}</div>`;
+
+    // Extend dog type locally to access owner_last_name which we added in processDog
+    const extendedDog = dog as any;
 
     return `
     <article class="card dog-card-interactive" data-dog-id="${dog.id}" style="cursor: pointer; display: flex; align-items: center; gap: 1rem; padding: 1.5rem;">
       ${photoHtml}
       <div class="dog-info">
         <h3 class="" style="margin: 0; font-size: 1.25rem; color: var(--primary-color);">${escapeHtml(dog.name)}</h3>
-        <p class="" style="margin: 0.25rem 0; color: var(--text-muted); font-size: 0.9rem;">Owner: ${escapeHtml(dog.ownerLastName)}</p>
+        <p class="" style="margin: 0.25rem 0; color: var(--text-muted); font-size: 0.9rem;">Owner: ${escapeHtml(extendedDog.owner_last_name || 'Unknown')}</p>
         <div class="dog-details" style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
           ${dog.gender ? `<span class="syncing-badge">${escapeHtml(dog.gender)}</span>` : ''}
-          <span class="syncing-badge">${escapeHtml(dog.breed)}</span>
+          <span class="syncing-badge">${escapeHtml(dog.breed || 'Unknown')}</span>
         </div>
       </div>
     </article>
   `;
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -609,26 +645,28 @@ function escapeHtml(text) {
 // Modal
 // ==========================================
 
-async function openModal(dog) {
+async function openModal(dog: Dog) {
     state.selectedDog = dog;
 
     const photoHtml = dog.photo
-        ? `<img src="${dog.photo}" alt="${dog.name}">`
+        ? `<img src="${typeof dog.photo === 'string' ? dog.photo : (dog.photo.medium || dog.photo.thumb || dog.photo.original)}" alt="${dog.name}">`
         : '🐕';
+
+    const extendedDog = dog as any;
 
     elements.selectedDogInfo.innerHTML = `
     <div class="selected-dog-photo">${photoHtml}</div>
     <div class="selected-dog-details">
       <h3>${escapeHtml(dog.name)}</h3>
-      <p>Owner: ${escapeHtml(dog.ownerLastName)}</p>
-      <p>${escapeHtml(dog.breed)}${dog.gender ? ` • ${escapeHtml(dog.gender)}` : ''}${dog.color ? ` • ${escapeHtml(dog.color)}` : ''}</p>
+      <p>Owner: ${escapeHtml(extendedDog.owner_last_name || 'Unknown')}</p>
+      <p>${escapeHtml(dog.breed || '')}${dog.gender ? ` • ${escapeHtml(dog.gender)}` : ''}${dog.color ? ` • ${escapeHtml(dog.color)}` : ''}</p>
     </div>
   `;
 
     elements.checkinStatus.innerHTML = '';
     elements.confirmCheckin.disabled = false;
-    elements.confirmCheckin.querySelector('.btn-text').classList.remove('hidden');
-    elements.confirmCheckin.querySelector('.btn-loading').classList.add('hidden');
+    elements.confirmCheckin.querySelector('.btn-text')?.classList.remove('hidden');
+    elements.confirmCheckin.querySelector('.btn-loading')?.classList.add('hidden');
 
     // Set date to today by default
     elements.checkinDate.value = new Date().toISOString().split('T')[0];
@@ -654,14 +692,15 @@ function closeModal() {
 
 async function handleCheckIn() {
     if (!state.selectedDog) return;
+    if (!state.authToken) return;
 
     const dog = state.selectedDog;
     const confirmBtn = elements.confirmCheckin;
 
     // Disable button and show loading
     confirmBtn.disabled = true;
-    confirmBtn.querySelector('.btn-text').classList.add('hidden');
-    confirmBtn.querySelector('.btn-loading').classList.remove('hidden');
+    confirmBtn.querySelector('.btn-text')?.classList.add('hidden');
+    confirmBtn.querySelector('.btn-loading')?.classList.remove('hidden');
 
     const statusContainer = elements.checkinStatus;
 
@@ -682,7 +721,7 @@ async function handleCheckIn() {
 
         // Step 2: Create cart
         updateStatus(statusContainer, 'Creating appointment...', 'active');
-        const cartResult = await api.createCart(state.user?.id, state.authToken);
+        const cartResult = await api.createCart(state.user?.id || 0, state.authToken);
 
         if (!cartResult.success) {
             throw new Error('Failed to create cart');
@@ -708,7 +747,7 @@ async function handleCheckIn() {
 
         // Step 4: Update cart with user
         updateStatus(statusContainer, 'Confirming booking...', 'active');
-        await api.updateCart(cartId, state.user?.id, state.authToken);
+        await api.updateCart(cartId, state.user?.id || 0, state.authToken);
 
         // Step 5: Create purchase
         const purchaseResult = await api.createPurchase(cartId, dog.id, state.authToken);
@@ -733,13 +772,13 @@ async function handleCheckIn() {
         }
 
         // Success!
-        showToast(`${dog.name} checked in for daycare! 🎉`, 'success');
+        showToast(`${dog.name} checked in! 🎉`, 'success');
 
         setTimeout(() => {
             closeModal();
         }, 1500);
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Check-in error:', error);
 
         let errorMessage = error.message;
@@ -763,12 +802,12 @@ async function handleCheckIn() {
 
         // Re-enable button
         confirmBtn.disabled = false;
-        confirmBtn.querySelector('.btn-text').classList.remove('hidden');
-        confirmBtn.querySelector('.btn-loading').classList.add('hidden');
+        confirmBtn.querySelector('.btn-text')?.classList.remove('hidden');
+        confirmBtn.querySelector('.btn-loading')?.classList.add('hidden');
     }
 }
 
-function updateStatus(container, message, type) {
+function updateStatus(container: HTMLElement, message: string, type: 'active' | 'complete' | 'error') {
     const step = document.createElement('div');
     step.className = `status-step ${type}`;
     step.innerHTML = `
@@ -783,7 +822,7 @@ function updateStatus(container, message, type) {
 // Toast Notifications
 // ==========================================
 
-function showToast(message, type = 'info') {
+function showToast(message: string, type = 'info') {
     elements.toast.className = `toast ${type}`;
     elements.toastMessage.textContent = message;
     elements.toast.classList.remove('hidden');
