@@ -4,6 +4,7 @@
  */
 
 import * as api from './api/client.js';
+import { dogCache as cache } from './api/cache.js';
 
 const DAYCARE_VARIATIONS = {
     weekday: '91629241',      // Standard Daycare (Mon-Fri)
@@ -28,7 +29,9 @@ let state = {
         petColorFieldId: null,
         petGenderFieldId: null
     },
-    variations: []
+    variations: [],
+    isSyncing: false,
+    syncProgress: 0
 };
 
 // ==========================================
@@ -89,6 +92,8 @@ async function init() {
         state.authToken = savedToken;
         state.user = JSON.parse(savedUser);
         await showMainScreen();
+        // Start background sync after session restore
+        startBackgroundSync();
     } else {
         showLoginScreen();
     }
@@ -161,12 +166,14 @@ async function handleLogin(e) {
             sessionStorage.setItem('user', JSON.stringify(state.user));
 
             await showMainScreen();
+            // Start background sync after login
+            startBackgroundSync();
         } else {
             throw new Error('Login failed');
         }
     } catch (error) {
         console.error('Login error:', error);
-        
+
         let displayError = 'Login failed. Please check your credentials.';
         if (error.message) {
             if (error.message.includes('wrong email or password')) {
@@ -175,7 +182,7 @@ async function handleLogin(e) {
                 displayError = error.message;
             }
         }
-        
+
         elements.loginError.textContent = displayError;
         elements.loginError.classList.remove('hidden');
     } finally {
@@ -223,8 +230,71 @@ async function showMainScreen() {
     await loadCompanyData();
 
     // Show initial search prompt
-    elements.dogCount.textContent = 'Search for a dog by name';
+    const cachedCount = await cache.getCount();
+    elements.dogCount.textContent = cachedCount > 0
+        ? `Ready (${cachedCount} dogs cached)`
+        : 'Search for a dog by name';
     showSearchPrompt();
+}
+
+// ==========================================
+// Background Sync
+// ==========================================
+
+async function startBackgroundSync() {
+    if (state.isSyncing || !state.authToken) return;
+
+    state.isSyncing = true;
+    let currentPage = 1;
+    const perPage = 20;
+    let totalDogsSynced = 0;
+
+    showSyncToast('Starting background sync...');
+
+    try {
+        while (true) {
+            const result = await api.syncDogs(currentPage, perPage, state.authToken);
+
+            if (!result.success) throw new Error('Sync failed');
+
+            const dogs = result.dogs.map(dog => processDog(dog));
+            await cache.putDogs(dogs);
+
+            totalDogsSynced += dogs.length;
+            const progress = Math.min(Math.round((currentPage / (result.pagination.totalPages || 1)) * 100), 100);
+
+            updateSyncToast(`Syncing dogs: ${progress}%`, progress);
+
+            if (currentPage >= result.pagination.totalPages) break;
+            currentPage++;
+        }
+
+        showToast(`Sync complete! ${totalDogsSynced} dogs updated.`, 'success');
+        elements.dogCount.textContent = `${totalDogsSynced} dogs loaded`;
+    } catch (error) {
+        console.error('Background sync failed:', error);
+        showToast('Background sync encountered an error.', 'error');
+    } finally {
+        state.isSyncing = false;
+    }
+}
+
+function showSyncToast(message) {
+    elements.toast.className = 'toast info sync-toast';
+    elements.toastMessage.innerHTML = `
+        <div class="sync-message">${message}</div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" style="width: 0%"></div>
+        </div>
+    `;
+    elements.toast.classList.remove('hidden');
+}
+
+function updateSyncToast(message, progress) {
+    const msgEl = elements.toast.querySelector('.sync-message');
+    const barEl = elements.toast.querySelector('.progress-bar');
+    if (msgEl) msgEl.textContent = message;
+    if (barEl) barEl.style.width = `${progress}%`;
 }
 
 // ==========================================
@@ -409,12 +479,24 @@ function handleSearch(e) {
     }
 
     // Debounce - wait 300ms before searching
-    searchTimeout = setTimeout(() => {
-        searchDogs(query);
+    searchTimeout = setTimeout(async () => {
+        // First try local cache
+        const localResults = await cache.search(query);
+
+        if (localResults.length > 0) {
+            state.dogs = localResults;
+            state.filteredDogs = [...localResults];
+            elements.dogCount.textContent = `${state.dogs.length} dog${state.dogs.length === 1 ? '' : 's'} found (local)`;
+            renderDogs();
+        } else {
+            // Fall back to remote search
+            searchDogs(query);
+        }
     }, 300);
 }
 
 async function searchDogs(query) {
+    showToast('Searching server database...', 'info');
     elements.loadingDogs.classList.remove('hidden');
     elements.dogsGrid.innerHTML = '';
     elements.noResults.classList.add('hidden');

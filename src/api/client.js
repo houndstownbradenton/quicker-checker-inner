@@ -94,6 +94,13 @@ export async function searchDogs(query, authToken) {
 }
 
 /**
+ * Fetch paginated dog data for background sync
+ */
+export async function syncDogs(page, perPage, authToken) {
+    return apiRequest('GET', `/dogs/sync?page=${page}&per_page=${perPage}`, null, authToken);
+}
+
+/**
  * Get available times for daycare
  */
 export async function getOpenTimes(dogId, date, authToken, variationId) {

@@ -246,9 +246,10 @@ app.get('/api/dogs', async (req, res) => {
 // Get employees for location
 app.get('/api/employees', async (req, res) => {
     try {
-        const { locationId } = req.query;
+        const { locationId, per_page } = req.query;
         const locId = locationId || LOCATION_ID;
-        const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/employees?location_id=${locId}`);
+        const perPage = per_page || 50;
+        const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/employees?location_id=${locId}&per_page=${perPage}`);
         res.json({
             success: true,
             employees: result.employees || []
@@ -355,6 +356,65 @@ app.get('/api/dogs/search', async (req, res) => {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to search dogs'
+        });
+    }
+});
+
+// Sync dogs and clients (paginated, location-wide)
+app.get('/api/dogs/sync', async (req, res) => {
+    try {
+        const authToken = req.headers.authorization;
+        const page = parseInt(req.query.page) || 1;
+        const perPage = Math.min(parseInt(req.query.per_page) || 20, 20);
+
+        if (!authToken) {
+            return res.status(401).json({ success: false, error: 'Authorization required' });
+        }
+
+        console.log(`Sync request: page ${page}, per_page ${perPage}`);
+
+        // Get clients at this location with their children
+        const clientsResult = await partnerApiRequest('GET', '/clients', {
+            include_children: true,
+            location_mytime_ids: [parseInt(LOCATION_ID)],
+            page: page,
+            per_page: perPage
+        });
+
+        const clients = clientsResult.clients || [];
+        const totalClients = clientsResult.total_count || clients.length;
+        const dogs = [];
+
+        for (const client of clients) {
+            if (client.children && Array.isArray(client.children)) {
+                for (const child of client.children) {
+                    dogs.push({
+                        ...child,
+                        owner_first_name: client.first_name,
+                        owner_last_name: client.last_name,
+                        owner_email: client.email,
+                        client_id: client.id || client.mytime_id,
+                        preferred_location_mytime_id: client.preferred_location_mytime_id
+                    });
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            dogs: dogs,
+            pagination: {
+                page,
+                perPage,
+                totalClients,
+                totalPages: Math.ceil(totalClients / perPage)
+            }
+        });
+    } catch (error) {
+        console.error('Sync error:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || 'Failed to sync dogs'
         });
     }
 });
@@ -478,6 +538,26 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
         const { cartId } = req.params;
         const { dogId, beginAt, endAt, dealId, variationId, employeeIds } = req.body;
 
+        // Resource Mapping (Boarding ID: 295288, Evaluation ID: 295290)
+        // User requested: Daycare -> Daycare Employee, Boarding -> Boarding Employee
+        // Since "Daycare" employee is missing from list, we fallback to Boarding or generic logic
+        // For now, we map Daycare variations to Boarding ID as it's the only generic "room" type available
+        const RESOURCE_MAP = {
+            '91629241': '295287', // Weekday Daycare -> Daycare Staff
+            '92628859': '295287', // Sat Daycare -> Daycare Staff
+            '111325854': '295287', // Sun Daycare -> Daycare Staff
+            '91420537': '295290', // Evaluation -> Evaluation Staff
+            '99860007': '295289'  // Bath (Grooming) -> Spa Services Staff
+        };
+
+        let targetEmployeeIds = employeeIds || '';
+
+        // Auto-assign resource if not provided
+        if (!targetEmployeeIds && variationId && RESOURCE_MAP[String(variationId)]) {
+            targetEmployeeIds = RESOURCE_MAP[String(variationId)];
+            console.log(`[cart] Auto-assigned resource ${targetEmployeeIds} for variation ${variationId}`);
+        }
+
         // Get the correct variation based on the booking date
         // Parse date as local time to get correct day of week
         let bookingDate = new Date();
@@ -487,24 +567,33 @@ app.post('/api/cart/:cartId/items', async (req, res) => {
             bookingDate = new Date(year, month - 1, day); // month is 0-indexed
         }
 
-        const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, {
+        const payload = {
             location_id: parseInt(LOCATION_ID),
-            variation_ids: variationId || getDaycareVariationId(bookingDate),
-            deal_id: dealId,
-            employee_ids: employeeIds || '',
+            variation_ids: String(variationId || getDaycareVariationId(bookingDate)),
+            deal_id: dealId ? parseInt(dealId) : null,
+            employee_id: targetEmployeeIds ? parseInt(targetEmployeeIds) : null,
             begin_at: beginAt,
             end_at: endAt,
             is_existing_customer: true,
             travel_to_customer: false,
-            has_specific_employee: !!employeeIds,
-            child_id: dogId ? parseInt(dogId) : null
-        }, authToken);
+            has_specific_employee: !!targetEmployeeIds,
+            child_id: dogId ? String(dogId) : null
+        };
 
-        res.json({
-            success: true,
-            cartItem: result.cart_item,
-            cart: result.cart
-        });
+        console.log(`[cart] ADD ITEM REQUEST:`, JSON.stringify(payload, null, 2));
+
+        try {
+            const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, payload, authToken);
+
+            res.json({
+                success: true,
+                cartItem: result.cart_item,
+                cart: result.cart
+            });
+        } catch (error) {
+            console.error(`[cart] ADD ITEM FAILED:`, JSON.stringify(error.response?.data || error.message, null, 2));
+            throw error;
+        }
     } catch (error) {
         res.status(error.response?.status || 500).json({
             success: false,

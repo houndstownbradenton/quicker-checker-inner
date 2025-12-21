@@ -1,0 +1,578 @@
+{
+  "variations": [
+    {
+      "id": 91629241,
+      "duration": 780,
+      "name": "Daycare",
+      "service_name": "Daycare",
+      "description": null,
+      "external_id": "daycare",
+      "add_on": false,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28662267,
+          "location_id": 158078,
+          "employee_id": 295287,
+          "variation_id": 91629241,
+          "new_min_price": 36,
+          "new_list_price": 36,
+          "existing_min_price": 36,
+          "existing_list_price": 36,
+          "promoting": false,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 92628859,
+      "duration": 480,
+      "name": "Saturday Daycare",
+      "service_name": "Daycare",
+      "description": null,
+      "external_id": "saturdaydaycare",
+      "add_on": false,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28662268,
+          "location_id": 158078,
+          "employee_id": 295287,
+          "variation_id": 92628859,
+          "new_min_price": 30,
+          "new_list_price": 30,
+          "existing_min_price": 30,
+          "existing_list_price": 30,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 110709520,
+      "duration": 480,
+      "name": "Resident Daycare",
+      "service_name": "Daycare",
+      "description": null,
+      "external_id": "resident_daycare",
+      "add_on": false,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28662269,
+          "location_id": 158078,
+          "employee_id": 295287,
+          "variation_id": 110709520,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 112837451,
+      "duration": 0,
+      "name": "Use Staff: SPA SERVICES",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "use-staff-spa-services",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28668784,
+          "location_id": 158078,
+          "employee_id": 295287,
+          "variation_id": 112837451,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        },
+        {
+          "id": 28668785,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 112837451,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        },
+        {
+          "id": 28668786,
+          "location_id": 158078,
+          "employee_id": 295290,
+          "variation_id": 112837451,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91404079,
+      "duration": 20160,
+      "name": "Boarding - 1 Dog Townhome",
+      "service_name": "Boarding",
+      "description": null,
+      "external_id": "1 night boarding - 1 dog townhome",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469229,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 91404079,
+          "new_min_price": 55,
+          "new_list_price": 55,
+          "existing_min_price": 55,
+          "existing_list_price": 55,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91404147,
+      "duration": 1440,
+      "name": "Boarding - 1 Dog Luxury Suite",
+      "service_name": "Boarding",
+      "description": null,
+      "external_id": "1 night boarding - 1 dog luxury suite",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469230,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 91404147,
+          "new_min_price": 65,
+          "new_list_price": 65,
+          "existing_min_price": 65,
+          "existing_list_price": 65,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 111734724,
+      "duration": 1440,
+      "name": "Boarding - 1 Dog Double Suite",
+      "service_name": "Boarding",
+      "description": null,
+      "external_id": "boarding-1-dog-double-suite",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469239,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 111734724,
+          "new_min_price": 75,
+          "new_list_price": 75,
+          "existing_min_price": 75,
+          "existing_list_price": 75,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 111288628,
+      "duration": 1440,
+      "name": "Boarding - Additional Dog",
+      "service_name": "Boarding",
+      "description": null,
+      "external_id": "boarding-additional-dog",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469240,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 111288628,
+          "new_min_price": 36,
+          "new_list_price": 36,
+          "existing_min_price": 36,
+          "existing_list_price": 36,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91407252,
+      "duration": 1440,
+      "name": "Cat Boarding",
+      "service_name": "Boarding",
+      "description": null,
+      "external_id": "cat boarding",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469241,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 91407252,
+          "new_min_price": 30,
+          "new_list_price": 30,
+          "existing_min_price": 30,
+          "existing_list_price": 30,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 112837449,
+      "duration": 0,
+      "name": "Use Staff: FEE",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "use-staff-fee",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28668783,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 112837449,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 113322720,
+      "duration": 0,
+      "name": "Shelter Boarding",
+      "service_name": "Boarding - SPECIAL",
+      "description": null,
+      "external_id": null,
+      "add_on": false,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 31103275,
+          "location_id": 158078,
+          "employee_id": 295288,
+          "variation_id": 113322720,
+          "new_min_price": 15,
+          "new_list_price": 15,
+          "existing_min_price": 15,
+          "existing_list_price": 15,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91629719,
+      "duration": 0,
+      "name": "Townie Bath",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "townie bath",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026708,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 91629719,
+          "new_min_price": 25,
+          "new_list_price": 25,
+          "existing_min_price": 25,
+          "existing_list_price": 25,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91629630,
+      "duration": 0,
+      "name": "Townie Deluxe Bath",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "townie deluxe bath",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026711,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 91629630,
+          "new_min_price": 45,
+          "new_list_price": 45,
+          "existing_min_price": 45,
+          "existing_list_price": 45,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91425203,
+      "duration": 0,
+      "name": "Nails",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "nails",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026714,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 91425203,
+          "new_min_price": 10,
+          "new_list_price": 10,
+          "existing_min_price": 10,
+          "existing_list_price": 10,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 106411403,
+      "duration": 0,
+      "name": "Stand Alone Nails",
+      "service_name": "Add-ons",
+      "description": "Nail trim with NO Bath",
+      "external_id": "stand-alone-nails",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026717,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 106411403,
+          "new_min_price": 15,
+          "new_list_price": 15,
+          "existing_min_price": 15,
+          "existing_list_price": 15,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91425254,
+      "duration": 0,
+      "name": "Blueberry Facial",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "blueberry facial",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026720,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 91425254,
+          "new_min_price": 10,
+          "new_list_price": 10,
+          "existing_min_price": 10,
+          "existing_list_price": 10,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91425350,
+      "duration": 0,
+      "name": "Teeth brushing",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "teeth brushing",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026723,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 91425350,
+          "new_min_price": 10,
+          "new_list_price": 10,
+          "existing_min_price": 10,
+          "existing_list_price": 10,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 110883216,
+      "duration": 0,
+      "name": "All Add-Ons",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "all-add-ons",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026726,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 110883216,
+          "new_min_price": 20,
+          "new_list_price": 20,
+          "existing_min_price": 20,
+          "existing_list_price": 20,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 99860007,
+      "duration": 15,
+      "name": "Bath",
+      "service_name": "Grooming",
+      "description": null,
+      "external_id": "bath",
+      "add_on": false,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 28026730,
+          "location_id": 158078,
+          "employee_id": 295289,
+          "variation_id": 99860007,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 91420537,
+      "duration": 30,
+      "name": "Evaluation",
+      "service_name": "Evaluation Service",
+      "description": null,
+      "external_id": "evaluation",
+      "add_on": false,
+      "bookable": true,
+      "pricings": [
+        {
+          "id": 28469244,
+          "location_id": 158078,
+          "employee_id": 295290,
+          "variation_id": 91420537,
+          "new_min_price": 0,
+          "new_list_price": 0,
+          "existing_min_price": 0,
+          "existing_list_price": 0,
+          "promoting": false,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    },
+    {
+      "id": 110763601,
+      "duration": 0,
+      "name": "After 12pm Check Out",
+      "service_name": "Add-ons",
+      "description": null,
+      "external_id": "after-12pm-check-out",
+      "add_on": true,
+      "bookable": false,
+      "pricings": [
+        {
+          "id": 29023386,
+          "location_id": 158078,
+          "employee_id": 299862,
+          "variation_id": 110763601,
+          "new_min_price": 30,
+          "new_list_price": 30,
+          "existing_min_price": 30,
+          "existing_list_price": 30,
+          "promoting": null,
+          "uuid": null,
+          "employee_uuid": null,
+          "variation_uuid": null
+        }
+      ]
+    }
+  ]
+}
