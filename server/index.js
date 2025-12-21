@@ -93,13 +93,17 @@ async function partnerApiRequest(method, endpoint, params = null) {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
+        console.log(`Login attempt for: ${email}`);
+        console.log(`Using Company ID: ${COMPANY_ID}`);
 
+        // Removing recaptcha_token: null as some APIs reject explicit nulls
         const result = await mytimeRequest('POST', '/sessions', {
             email,
             password,
-            company_id: parseInt(COMPANY_ID),
-            recaptcha_token: null
+            company_id: parseInt(COMPANY_ID)
         });
+
+        console.log(`Login successful for user: ${result.user?.id}`);
 
         res.json({
             success: true,
@@ -107,9 +111,11 @@ app.post('/api/auth/login', async (req, res) => {
             token: result.user?.authentication_token
         });
     } catch (error) {
+        const errorData = error.response ? error.response.data : { message: error.message };
+        console.error('Login failed:', JSON.stringify(errorData));
         res.status(error.response?.status || 500).json({
             success: false,
-            error: error.response?.data?.errors || 'Login failed'
+            error: errorData.errors || errorData.error || 'Login failed'
         });
     }
 });
@@ -575,6 +581,69 @@ app.put('/api/check-in/:appointmentId', async (req, res) => {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to check in'
+        });
+    }
+});
+
+// Diagnostic: List all employees to verify emails
+app.get('/api/debug/employees', async (req, res) => {
+    try {
+        console.log('Fetching employee list...');
+        const result = await partnerApiRequest('GET', '/employees');
+        const employees = result.employees || [];
+
+        res.json({
+            success: true,
+            count: employees.length,
+            employees: employees.map(e => ({
+                id: e.mytime_id,
+                name: `${e.first_name} ${e.last_name}`,
+                email: e.email,
+                active: e.active
+            }))
+        });
+    } catch (error) {
+        console.error('Failed to fetch employees:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            details: error.response ? error.response.data : null
+        });
+    }
+});
+
+// Diagnostic: Verify API Key and IDs
+app.get('/api/debug/verify-config', async (req, res) => {
+    try {
+        console.log('Running diagnostic check...');
+        // The Partner API /locations endpoint doesn't require a company_id
+        const result = await partnerApiRequest('GET', '/locations');
+        const locations = result.locations || result.clients || [];
+
+        const bradenton = locations.find(l =>
+            l.name?.toLowerCase().includes('bradenton') ||
+            String(l.mytime_id) === String(LOCATION_ID)
+        );
+
+        res.json({
+            success: true,
+            currentConfig: {
+                companyId: COMPANY_ID,
+                locationId: LOCATION_ID
+            },
+            discovered: bradenton ? {
+                name: bradenton.name,
+                company_id: bradenton.company_id,
+                location_id: bradenton.mytime_id
+            } : 'Bradenton not found in your account locations',
+            allAccountLocations: locations.map(l => ({ name: l.name, id: l.mytime_id, company_id: l.company_id }))
+        });
+    } catch (error) {
+        console.error('Diagnostic failed:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            details: error.response ? error.response.data : null
         });
     }
 });

@@ -166,7 +166,17 @@ async function handleLogin(e) {
         }
     } catch (error) {
         console.error('Login error:', error);
-        elements.loginError.textContent = error.message || 'Login failed. Please check your credentials.';
+        
+        let displayError = 'Login failed. Please check your credentials.';
+        if (error.message) {
+            if (error.message.includes('wrong email or password')) {
+                displayError = 'Incorrect email or password.';
+            } else {
+                displayError = error.message;
+            }
+        }
+        
+        elements.loginError.textContent = displayError;
         elements.loginError.classList.remove('hidden');
     } finally {
         submitBtn.disabled = false;

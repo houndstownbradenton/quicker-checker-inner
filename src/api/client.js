@@ -38,7 +38,28 @@ async function apiRequest(method, endpoint, data = null, authToken = null) {
     }
 
     if (!response.ok) {
-        throw new Error(json.error || `API error: ${response.status}`);
+        let errorMessage = `API error: ${response.status}`;
+
+        if (json.error) {
+            if (typeof json.error === 'string') {
+                errorMessage = json.error;
+            } else if (typeof json.error === 'object') {
+                // Handle MyTime specific error format: { general: [{ type: '...' }], failed_attempts: X }
+                if (json.error.general && Array.isArray(json.error.general) && json.error.general[0]?.type) {
+                    errorMessage = json.error.general[0].type.replace(/_/g, ' ');
+                    // Capitalize first letter
+                    errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
+
+                    if (json.error.failed_attempts) {
+                        errorMessage += ` (${json.error.failed_attempts} failed attempts)`;
+                    }
+                } else {
+                    errorMessage = JSON.stringify(json.error);
+                }
+            }
+        }
+
+        throw new Error(errorMessage);
     }
 
     return json;
