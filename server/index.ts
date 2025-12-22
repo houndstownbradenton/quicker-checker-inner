@@ -89,9 +89,6 @@ async function partnerApiRequest(method: string, endpoint: string, dataOrParams:
         'X-Api-Key': MYTIME_API_KEY || ''
     };
 
-    console.log(`[Partner API] ${method} ${endpoint}`);
-    console.log(`[Partner API] API Key present: ${!!MYTIME_API_KEY}, Length: ${MYTIME_API_KEY?.length || 0}`);
-
     try {
         const config: any = {
             method,
