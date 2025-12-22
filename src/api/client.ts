@@ -191,6 +191,13 @@ export async function searchDogs(query: string, authToken: string): Promise<Dogs
 }
 
 /**
+ * Sync dogs with paginated results
+ */
+export async function syncDogs(page: number, perPage: number, authToken: string): Promise<any> {
+    return apiRequest<any>('GET', `/dogs/sync?page=${page}&per_page=${perPage}`, null, authToken);
+}
+
+/**
  * Get available times for daycare
  */
 export async function getOpenTimes(dogId: number, date: string, authToken: string, variationId: string): Promise<OpenTimesResponse> {
@@ -228,6 +235,20 @@ export async function updateCart(cartId: number, userId: number, authToken: stri
  */
 export async function createPurchase(cartId: number, dogId: number, authToken: string): Promise<PurchaseResponse> {
     return apiRequest<PurchaseResponse>('POST', '/purchase', { cartId, dogId }, authToken);
+}
+
+/**
+ * Create an appointment directly (bypass Marketplace)
+ */
+export async function createDirectAppointment(data: {
+    dogId: number;
+    variationId: string;
+    beginAt: string;
+    endAt: string;
+    employeeId?: string;
+    clientId?: number;
+}, authToken: string): Promise<ApiResponse> {
+    return apiRequest<ApiResponse>('POST', '/appointments/direct', data, authToken);
 }
 
 /**

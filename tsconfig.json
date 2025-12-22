@@ -22,7 +22,8 @@
         "noFallthroughCasesInSwitch": true
     },
     "include": [
-        "src"
+        "src",
+        "server"
     ],
     "ts-node": {
         "esm": true,

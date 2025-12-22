@@ -3,25 +3,40 @@ import type { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// Load environment variables
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables from parent directory
+dotenv.config({ path: join(__dirname, '..', '.env') });
+
+// Inlined constants (TODO: refactor to separate module once ES module issues are resolved)
+const LOCATION_ID = '158078';
+
+const DAYCARE_VARIATIONS = {
+    weekday: '91629241',      // Standard Daycare (Mon-Fri)
+    saturday: '92628859',     // Saturday Daycare
+    sunday: '111325854'       // Sunday Daycare
+};
+
+const EVALUATION_VARIATION_ID = '91420537';
+
+const RESOURCE_MAP: Record<string, string> = {
+    [DAYCARE_VARIATIONS.weekday]: '295287',
+    [DAYCARE_VARIATIONS.saturday]: '295287',
+    [EVALUATION_VARIATION_ID]: '295290', // Evaluation Staff
+    '99860007': '295289'                // Bath (Grooming) -> Spa Services Staff
+};
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuration from .env
 const MYTIME_BASE_URL = process.env.MYTIME_BASE_URL || 'https://www.mytime.com';
-const MYTIME_API_KEY = process.env.VITE_MYTIME_API_KEY;
-const COMPANY_ID = process.env.VITE_MYTIME_COMPANY_ID;
-const LOCATION_ID = process.env.MYTIME_LOCATION_ID || '158078';
-
-// Daycare variation IDs
-const DAYCARE_VARIATIONS = {
-    weekday: '91629241',      // Standard Daycare (Mon-Fri)
-    saturday: '92628859',     // Saturday Daycare
-    sunday: '111325854'       // Sunday Daycare (in case needed later)
-};
+const MYTIME_API_KEY = process.env.MYTIME_API_KEY;
+const COMPANY_ID = process.env.MYTIME_COMPANY_ID;
 
 // Get the appropriate daycare variation ID based on the day
 function getDaycareVariationId(date: Date = new Date()): string {
@@ -66,7 +81,7 @@ async function mytimeRequest(method: string, endpoint: string, data: any = null,
 
 // Helper to make Partner API requests (for location-wide access to clients/pets)
 // Uses X-Api-Key header and partners-api.mytime.com host
-async function partnerApiRequest(method: string, endpoint: string, params: any = null): Promise<any> {
+async function partnerApiRequest(method: string, endpoint: string, dataOrParams: any = null): Promise<any> {
     const url = `https://partners-api.mytime.com/api${endpoint}`;
     const headers = {
         'Content-Type': 'application/json',
@@ -74,16 +89,30 @@ async function partnerApiRequest(method: string, endpoint: string, params: any =
         'X-Api-Key': MYTIME_API_KEY || ''
     };
 
+    console.log(`[Partner API] ${method} ${endpoint}`);
+    console.log(`[Partner API] API Key present: ${!!MYTIME_API_KEY}, Length: ${MYTIME_API_KEY?.length || 0}`);
+
     try {
-        const response = await axios({
+        const config: any = {
             method,
             url,
-            params,
             headers
-        });
+        };
+
+        // For POST/PUT, send as body data; for GET, send as query params
+        if (method.toUpperCase() === 'GET') {
+            config.params = dataOrParams;
+        } else {
+            config.data = dataOrParams;
+        }
+
+        const response = await axios(config);
         return response.data;
     } catch (error: any) {
         console.error(`Partner API Error: ${method} ${endpoint}`, error.response?.data || error.message);
+        if (error.response?.data?.errors) {
+            console.error(`Partner API Error Details:`, JSON.stringify(error.response.data.errors, null, 2));
+        }
         throw error;
     }
 }
@@ -365,8 +394,8 @@ app.get('/api/dogs/search', async (req: Request, res: Response) => {
 app.get('/api/dogs/sync', async (req, res) => {
     try {
         const authToken = req.headers.authorization;
-        const page = parseInt(req.query.page) || 1;
-        const perPage = Math.min(parseInt(req.query.per_page) || 20, 20);
+        const page = parseInt(req.query.page as string) || 1;
+        const perPage = Math.min(parseInt(req.query.per_page as string) || 20, 20);
 
         if (!authToken) {
             return res.status(401).json({ success: false, error: 'Authorization required' });
@@ -411,7 +440,7 @@ app.get('/api/dogs/sync', async (req, res) => {
                 totalPages: Math.ceil(totalClients / perPage)
             }
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Sync error:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             success: false,
@@ -424,7 +453,7 @@ app.get('/api/dogs/sync', async (req, res) => {
 app.get('/api/open-times', async (req: Request, res: Response) => {
     try {
         const authToken = req.headers.authorization;
-        const { dogId, date, variationId } = req.query;
+        const { dogId, date, variationId } = req.query as { dogId: string, date: string, variationId: string };
         console.log(`[open_times] REQUEST:`, req.query);
 
         // ... existing date parsing ...
@@ -554,8 +583,8 @@ app.post('/api/cart/:cartId/items', async (req: Request, res: Response) => {
         let targetEmployeeIds = employeeIds || '';
 
         // Auto-assign resource if not provided
-        if (!targetEmployeeIds && variationId && RESOURCE_MAP[String(variationId)]) {
-            targetEmployeeIds = RESOURCE_MAP[String(variationId)];
+        if (!targetEmployeeIds && variationId && (RESOURCE_MAP as Record<string, string>)[String(variationId)]) {
+            targetEmployeeIds = (RESOURCE_MAP as Record<string, string>)[String(variationId)];
             console.log(`[cart] Auto-assigned resource ${targetEmployeeIds} for variation ${variationId}`);
         }
 
@@ -568,26 +597,19 @@ app.post('/api/cart/:cartId/items', async (req: Request, res: Response) => {
             bookingDate = new Date(year, month - 1, day); // month is 0-indexed
         }
 
-<<<<<<< HEAD:server/index.js
-        const payload = {
-            location_id: parseInt(LOCATION_ID),
-            variation_ids: String(variationId || getDaycareVariationId(bookingDate)),
-            deal_id: dealId ? parseInt(dealId) : null,
-            employee_id: targetEmployeeIds ? parseInt(targetEmployeeIds) : null,
-=======
         const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, {
             location_id: LOCATION_ID ? parseInt(LOCATION_ID) : undefined,
-            variation_ids: variationId || getDaycareVariationId(bookingDate),
-            deal_id: dealId,
-            employee_ids: employeeIds || '',
->>>>>>> 75e6df916f3eecd47ade43c0e7d24be671d7623b:server/index.ts
+            variation_ids: String(variationId || getDaycareVariationId(bookingDate)),
+            deal_id: dealId ? parseInt(dealId) : null,
+            employee_ids: targetEmployeeIds || '',
             begin_at: beginAt,
             end_at: endAt,
             is_existing_customer: true,
             travel_to_customer: false,
             has_specific_employee: !!targetEmployeeIds,
             child_id: dogId ? String(dogId) : null
-        };
+        }, authToken);
+
         res.json({
             success: true,
             cartItem: result.cart_item,
@@ -649,6 +671,55 @@ app.post('/api/purchase', async (req: Request, res: Response) => {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || error.response?.data || 'Failed to create purchase'
+        });
+    }
+});
+
+// Direct booking bypass using Partners API (to bypass "bookable: false" restriction)
+app.post('/api/appointments/direct', async (req: Request, res: Response) => {
+    try {
+        const { dogId, variationId, beginAt, endAt, employeeId, clientId } = req.body;
+
+        // Determine employee ID: use provided one, or look up from RESOURCE_MAP
+        const finalEmployeeId = employeeId || RESOURCE_MAP[variationId];
+
+        if (!finalEmployeeId) {
+            console.error(`[direct_booking] No employee found for variation ${variationId}`);
+            return res.status(400).json({
+                success: false,
+                error: `No employee/resource mapping found for variation ${variationId}`
+            });
+        }
+
+        const appointmentData: any = {
+            location_mytime_id: parseInt(LOCATION_ID),
+            employee_mytime_id: parseInt(finalEmployeeId),
+            variations: [{
+                variation_id: parseInt(variationId)
+            }],
+            begin_at: beginAt,
+            end_at: endAt,
+            child_id: dogId ? parseInt(dogId) : undefined,
+            is_existing_customer: true,
+            send_notifications: false
+        };
+
+        // Only include client_mytime_id if provided
+        if (clientId) {
+            appointmentData.client_mytime_id = parseInt(clientId);
+        }
+
+        const result = await partnerApiRequest('POST', '/appointments', appointmentData);
+
+        res.json({
+            success: true,
+            appointment: result.appointment
+        });
+    } catch (error: any) {
+        console.error(`[direct_booking] Error:`, error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || error.message || 'Failed to create direct appointment'
         });
     }
 });

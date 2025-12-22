@@ -257,24 +257,24 @@ input[type="file"] {
 }
 
 .sync-toast {
-    flex-direction: column;
-    align-items: stretch;
-    min-width: 250px;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 250px;
 }
 
 .progress-bar-container {
-    width: 100%;
-    height: 8px;
-    background: #e2e8f0;
-    border-radius: 4px;
-    margin-top: 0.5rem;
-    overflow: hidden;
+  width: 100%;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  overflow: hidden;
 }
 
 .progress-bar {
-    height: 100%;
-    background: var(--secondary-color);
-    transition: width 0.3s ease;
+  height: 100%;
+  background: var(--secondary-color);
+  transition: width 0.3s ease;
 }
 
 .toast-icon {
@@ -1419,5 +1419,67 @@ input[type="file"] {
 #main-screen.active {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+}
+
+/* Date Picker Theming */
+.date-input-wrapper {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.date-input-wrapper:active {
+  transform: scale(0.99);
+}
+
+.date-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  padding-right: 2.5rem;
+  /* Space for the icon */
+  background: #f1f5f9;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 1rem;
+  height: 3.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  /* Hide default icon in some browsers */
+  -webkit-appearance: none;
+}
+
+.date-input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  /* Hide default icon to show our custom one */
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.date-input-icon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.25rem;
+  pointer-events: none;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.date-input:focus {
+  border-color: var(--primary-color);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(0, 88, 124, 0.1);
+}
+
+.date-input:hover {
+  background: #e2e8f0;
 }

@@ -5,12 +5,12 @@
 
 import * as api from './api/client';
 import { User, Dog, Variation } from './api/client';
-
-const DAYCARE_VARIATIONS = {
-    weekday: '91629241',      // Standard Daycare (Mon-Fri)
-    saturday: '92628859',     // Saturday Daycare
-    sunday: '111325854'       // Sunday Daycare
-};
+import { dogCache as cache } from './api/cache';
+import {
+    EVALUATION_VARIATION_ID,
+    SERVICE_TYPE_NAMES,
+    DAYCARE_VARIATIONS
+} from './api/constants';
 
 // ==========================================
 // State
@@ -30,6 +30,8 @@ interface AppState {
         petGenderFieldId: number | null;
     };
     variations: Variation[];
+    isSyncing: boolean;
+    syncProgress: number;
 }
 
 let state: AppState = {
@@ -138,6 +140,26 @@ function setupEventListeners() {
     if (elements.modalClose) elements.modalClose.addEventListener('click', closeModal);
     if (elements.cancelCheckin) elements.cancelCheckin.addEventListener('click', closeModal);
     if (elements.confirmCheckin) elements.confirmCheckin.addEventListener('click', handleCheckIn);
+
+    // Date picker click-anywhere functionality
+    const dateWrapper = document.querySelector('.date-input-wrapper');
+    const dateInput = document.getElementById('checkin-date') as HTMLInputElement;
+    if (dateWrapper && dateInput) {
+        dateWrapper.addEventListener('click', () => {
+            try {
+                // Try modern showPicker if available
+                if ('showPicker' in HTMLInputElement.prototype) {
+                    dateInput.showPicker();
+                } else {
+                    dateInput.click();
+                    dateInput.focus();
+                }
+            } catch (e) {
+                dateInput.click();
+                dateInput.focus();
+            }
+        });
+    }
 
     // Service Selection
     if (elements.serviceType) elements.serviceType.addEventListener('change', updateServiceDropdowns);
@@ -289,13 +311,13 @@ async function startBackgroundSync() {
 
             if (!result.success) throw new Error('Sync failed');
 
-            const dogs = result.dogs.map(dog => processDog(dog));
+            const dogs = result.dogs.map((dog: any) => processDog(dog));
             await cache.putDogs(dogs);
 
             totalDogsSynced += dogs.length;
             const progress = Math.min(Math.round((currentPage / (result.pagination.totalPages || 1)) * 100), 100);
 
-            updateSyncToast(`Syncing dogs: ${progress}%`, progress);
+            updateSyncToast(`Synced ${totalDogsSynced} dogs (${progress}%)`, progress);
 
             if (currentPage >= result.pagination.totalPages) break;
             currentPage++;
@@ -311,7 +333,7 @@ async function startBackgroundSync() {
     }
 }
 
-function showSyncToast(message) {
+function showSyncToast(message: string) {
     elements.toast.className = 'toast info sync-toast';
     elements.toastMessage.innerHTML = `
         <div class="sync-message">${message}</div>
@@ -322,9 +344,9 @@ function showSyncToast(message) {
     elements.toast.classList.remove('hidden');
 }
 
-function updateSyncToast(message, progress) {
+function updateSyncToast(message: string, progress: number) {
     const msgEl = elements.toast.querySelector('.sync-message');
-    const barEl = elements.toast.querySelector('.progress-bar');
+    const barEl = elements.toast.querySelector('.progress-bar') as HTMLElement;
     if (msgEl) msgEl.textContent = message;
     if (barEl) barEl.style.width = `${progress}%`;
 }
@@ -785,70 +807,114 @@ async function handleCheckIn() {
     const statusContainer = elements.checkinStatus;
 
     try {
-        // Step 1: Get available times for the selected date
         const selectedDate = elements.checkinDate.value || new Date().toISOString().split('T')[0];
         const variationId = elements.serviceVariation.value;
+        const serviceType = elements.serviceType.value;
 
-        updateStatus(statusContainer, `Finding available time slot for ${selectedDate}...`, 'active');
-        const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
+        // Use Direct Booking for Daycare and Evaluation (Bypass Marketplace restrictions)
+        const isBypassService = serviceType === SERVICE_TYPE_NAMES.DAYCARE || serviceType === SERVICE_TYPE_NAMES.EVALUATION;
 
-        if (!timesResult.success || !timesResult.openTimes?.length) {
-            throw new Error(`No available time slots for ${selectedDate}`);
-        }
+        if (isBypassService) {
+            updateStatus(statusContainer, `Creating direct booking for ${selectedDate}...`, 'active');
 
-        const timeSlot = timesResult.openTimes[0];
-        updateStatus(statusContainer, 'Found time slot ✓', 'complete');
+            // Find begin/end times (default to current time if no times found, or use a mock slot)
+            // For now, we'll try to find a real slot if possible, but if not found, we use current time
+            let beginAt = `${selectedDate}T09:00:00Z`; // Default to 9am
+            let endAt = `${selectedDate}T17:00:00Z`;   // Default to 5pm
 
-        // Step 2: Create cart
-        updateStatus(statusContainer, 'Creating appointment...', 'active');
-        const cartResult = await api.createCart(state.user?.id || 0, state.authToken);
+            try {
+                const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
+                if (timesResult.success && timesResult.openTimes?.length > 0) {
+                    beginAt = timesResult.openTimes[0].begin_at;
+                    endAt = timesResult.openTimes[0].end_at;
+                }
+            } catch (e) {
+                console.warn('Could not fetch open times for direct booking, using defaults.');
+            }
 
-        if (!cartResult.success) {
-            throw new Error('Failed to create cart');
-        }
+            const directResult = await api.createDirectAppointment({
+                dogId: dog.id,
+                variationId: variationId,
+                beginAt: beginAt,
+                endAt: endAt,
+                clientId: dog.client_id
+            }, state.authToken);
 
-        const cartId = cartResult.cart.id;
-        updateStatus(statusContainer, 'Cart created ✓', 'complete');
+            if (!directResult.success) {
+                throw new Error(directResult.error || 'Failed to create direct appointment');
+            }
 
-        // Step 3: Add cart item
-        updateStatus(statusContainer, 'Adding service to cart...', 'active');
-        const itemResult = await api.addCartItem(cartId, {
-            dogId: dog.id,
-            beginAt: timeSlot.begin_at,
-            endAt: timeSlot.end_at,
-            dealId: timeSlot.deal_id,
-            variationId: variationId
-        }, state.authToken);
-
-        if (!itemResult.success) {
-            throw new Error('Failed to add service to cart');
-        }
-        updateStatus(statusContainer, 'Service added ✓', 'complete');
-
-        // Step 4: Update cart with user
-        updateStatus(statusContainer, 'Confirming booking...', 'active');
-        await api.updateCart(cartId, state.user?.id || 0, state.authToken);
-
-        // Step 5: Create purchase
-        const purchaseResult = await api.createPurchase(cartId, dog.id, state.authToken);
-
-        if (!purchaseResult.success) {
-            throw new Error('Failed to complete booking');
-        }
-        updateStatus(statusContainer, 'Booking confirmed ✓', 'complete');
-
-        // Step 6: Check in
-        updateStatus(statusContainer, 'Checking in...', 'active');
-
-        // Get appointment ID from purchase
-        const appointmentId = purchaseResult.purchase?.appointments?.[0]?.id;
-
-        if (appointmentId) {
-            await api.checkInAppointment(appointmentId, state.authToken);
-            updateStatus(statusContainer, 'Checked in ✓', 'complete');
-        } else {
-            // If no appointment ID, still show success (appointment was created)
+            const appointmentId = directResult.appointment?.id;
             updateStatus(statusContainer, 'Appointment created ✓', 'complete');
+
+            // Step 6: Check in (reused)
+            if (appointmentId) {
+                updateStatus(statusContainer, 'Checking in...', 'active');
+                await api.checkInAppointment(appointmentId, state.authToken);
+                updateStatus(statusContainer, 'Checked in ✓', 'complete');
+            }
+        } else {
+            // ORIGINAL FLOW for Boarding / Spa (Marketplace API)
+            updateStatus(statusContainer, `Finding available time slot for ${selectedDate}...`, 'active');
+            const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
+
+            if (!timesResult.success || !timesResult.openTimes?.length) {
+                throw new Error(`No available time slots for ${selectedDate}`);
+            }
+
+            const timeSlot = timesResult.openTimes[0];
+            updateStatus(statusContainer, 'Found time slot ✓', 'complete');
+
+            // Step 2: Create cart
+            updateStatus(statusContainer, 'Creating appointment...', 'active');
+            const cartResult = await api.createCart(state.user?.id || 0, state.authToken);
+
+            if (!cartResult.success) {
+                throw new Error('Failed to create cart');
+            }
+
+            const cartId = cartResult.cart.id;
+            updateStatus(statusContainer, 'Cart created ✓', 'complete');
+
+            // Step 3: Add cart item
+            updateStatus(statusContainer, 'Adding service to cart...', 'active');
+            const itemResult = await api.addCartItem(cartId, {
+                dogId: dog.id,
+                beginAt: timeSlot.begin_at,
+                endAt: timeSlot.end_at,
+                dealId: timeSlot.deal_id,
+                variationId: variationId
+            }, state.authToken);
+
+            if (!itemResult.success) {
+                throw new Error('Failed to add service to cart');
+            }
+            updateStatus(statusContainer, 'Service added ✓', 'complete');
+
+            // Step 4: Update cart with user
+            updateStatus(statusContainer, 'Confirming booking...', 'active');
+            await api.updateCart(cartId, state.user?.id || 0, state.authToken);
+
+            // Step 5: Create purchase
+            const purchaseResult = await api.createPurchase(cartId, dog.id, state.authToken);
+
+            if (!purchaseResult.success) {
+                throw new Error('Failed to complete booking');
+            }
+            updateStatus(statusContainer, 'Booking confirmed ✓', 'complete');
+
+            // Step 6: Check in
+            updateStatus(statusContainer, 'Checking in...', 'active');
+
+            // Get appointment ID from purchase
+            const appointmentId = purchaseResult.purchase?.appointments?.[0]?.id;
+
+            if (appointmentId) {
+                await api.checkInAppointment(appointmentId, state.authToken);
+                updateStatus(statusContainer, 'Checked in ✓', 'complete');
+            } else {
+                updateStatus(statusContainer, 'Appointment created ✓', 'complete');
+            }
         }
 
         // Success!
