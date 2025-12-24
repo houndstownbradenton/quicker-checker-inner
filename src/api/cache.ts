@@ -1,7 +1,20 @@
 /**
  * DogCache - Local caching layer using IndexedDB
  */
+
+import { Dog } from './client';
+
+// Extended Dog type with search field for caching
+interface CachedDog extends Dog {
+    searchName: string;
+}
+
 export class DogCache {
+    private dbName: string;
+    private dbVersion: number;
+    private storeName: string;
+    private db: IDBDatabase | null;
+
     constructor() {
         this.dbName = 'QuickerCheckerDB';
         this.dbVersion = 1;
@@ -9,14 +22,14 @@ export class DogCache {
         this.db = null;
     }
 
-    async init() {
+    async init(): Promise<IDBDatabase> {
         if (this.db) return this.db;
 
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
+            request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+                const db = (event.target as IDBOpenDBRequest).result;
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
                     // Index for searching by name and owner
@@ -27,52 +40,55 @@ export class DogCache {
                 }
             };
 
-            request.onsuccess = (event) => {
-                this.db = event.target.result;
+            request.onsuccess = (event: Event) => {
+                this.db = (event.target as IDBOpenDBRequest).result;
                 resolve(this.db);
             };
 
-            request.onerror = (event) => {
-                console.error('IndexedDB error:', event.target.error);
-                reject(event.target.error);
+            request.onerror = (event: Event) => {
+                console.error('IndexedDB error:', (event.target as IDBOpenDBRequest).error);
+                reject((event.target as IDBOpenDBRequest).error);
             };
         });
     }
 
-    async putDogs(dogs) {
+    async putDogs(dogs: Dog[]): Promise<void> {
         await this.init();
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const transaction = this.db!.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
 
             dogs.forEach(dog => {
                 // Add a lowercase search field for easier matching
-                dog.searchName = (dog.name + ' ' + dog.ownerLastName).toLowerCase();
-                store.put(dog);
+                const cachedDog: CachedDog = {
+                    ...dog,
+                    searchName: ((dog.name || '') + ' ' + (dog.owner_last_name || '')).toLowerCase()
+                };
+                store.put(cachedDog);
             });
 
             transaction.oncomplete = () => resolve();
-            transaction.onerror = (event) => reject(event.target.error);
+            transaction.onerror = (event: Event) => reject((event.target as IDBRequest).error);
         });
     }
 
-    async search(query) {
+    async search(query: string): Promise<CachedDog[]> {
         await this.init();
         const queryLower = query.toLowerCase();
 
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const transaction = this.db!.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
-            const results = [];
+            const results: CachedDog[] = [];
 
             // We iterate and filter because IndexedDB doesn't support easy "contains" search on indexes
             // For small to medium datasets (a few thousand dogs), this is very fast locally
             const request = store.openCursor();
 
-            request.onsuccess = (event) => {
-                const cursor = event.target.result;
+            request.onsuccess = (event: Event) => {
+                const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>).result;
                 if (cursor) {
-                    const dog = cursor.value;
+                    const dog = cursor.value as CachedDog;
                     if (dog.searchName.includes(queryLower)) {
                         results.push(dog);
                     }
@@ -82,31 +98,31 @@ export class DogCache {
                 }
             };
 
-            request.onerror = (event) => reject(event.target.error);
+            request.onerror = (event: Event) => reject((event.target as IDBRequest).error);
         });
     }
 
-    async clear() {
+    async clear(): Promise<void> {
         await this.init();
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const transaction = this.db!.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
             const request = store.clear();
 
             request.onsuccess = () => resolve();
-            request.onerror = (event) => reject(event.target.error);
+            request.onerror = (event: Event) => reject((event.target as IDBRequest).error);
         });
     }
 
-    async getCount() {
+    async getCount(): Promise<number> {
         await this.init();
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const transaction = this.db!.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
             const request = store.count();
 
             request.onsuccess = () => resolve(request.result);
-            request.onerror = (event) => reject(event.target.error);
+            request.onerror = (event: Event) => reject((event.target as IDBRequest).error);
         });
     }
 }

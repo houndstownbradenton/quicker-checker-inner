@@ -1,0 +1,10 @@
+Fetching variations from Partner API...
+Found 21 variations total.
+
+--- Boarding Variations ---
+ID: 113322720, Name: "Shelter Boarding", Service: "Boarding - SPECIAL", Duration: 0 min
+ID: 91407252, Name: "Cat Boarding", Service: "Boarding", Duration: 1440 min
+ID: 111288628, Name: "Boarding - Additional Dog", Service: "Boarding", Duration: 1440 min
+ID: 111734724, Name: "Boarding - 1 Dog Double Suite", Service: "Boarding", Duration: 1740 min
+ID: 91404147, Name: "Boarding - 1 Dog Luxury Suite", Service: "Boarding", Duration: 1440 min
+ID: 91404079, Name: "Boarding - 1 Dog Townhome", Service: "Boarding", Duration: 20160 min

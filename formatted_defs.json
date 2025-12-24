@@ -1,0 +1,296 @@
+{
+  "Appointment": {
+    "required": [
+      "begin_at",
+      "end_at",
+      "employee_mytime_id",
+      "location_mytime_id",
+      "client_mytime_id"
+    ],
+    "properties": {
+      "purchased_at_price": {
+        "type": "number"
+      },
+      "begin_at": {
+        "type": "string"
+      },
+      "end_at": {
+        "type": "string"
+      },
+      "client_name": {
+        "type": "string"
+      },
+      "client_email": {
+        "type": "string"
+      },
+      "created_at": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "time_zone": {
+        "type": "string"
+      },
+      "is_existing_customer": {
+        "type": "string"
+      },
+      "client_phone": {
+        "type": "string"
+      },
+      "variation_name": {
+        "type": "string"
+      },
+      "full_address": {
+        "type": "string"
+      },
+      "employee_partner_id": {
+        "type": "integer"
+      },
+      "location_partner_id": {
+        "type": "integer"
+      },
+      "client_partner_id": {
+        "type": "integer"
+      },
+      "mytime_id": {
+        "type": "string"
+      },
+      "client_mobile_phone": {
+        "type": "string"
+      },
+      "client_home_phone": {
+        "type": "string"
+      },
+      "client_work_phone": {
+        "type": "string"
+      },
+      "checked_in_at": {
+        "type": "string"
+      },
+      "checked_in": {
+        "type": "string"
+      },
+      "checked_out_at": {
+        "type": "string"
+      },
+      "pos_status": {
+        "type": "string"
+      },
+      "address_id": {
+        "type": "string"
+      },
+      "employee_requested": {
+        "type": "string"
+      },
+      "child_partner_id": {
+        "type": "integer"
+      },
+      "employee_mytime_id": {
+        "type": "integer"
+      },
+      "location_mytime_id": {
+        "type": "integer"
+      },
+      "client_mytime_id": {
+        "type": "integer"
+      },
+      "child_mytime_id": {
+        "type": "integer"
+      },
+      "variations": {
+        "items": {
+          "$ref": "#/definitions/Variation"
+        }
+      },
+      "custom_field_values": {
+        "items": {
+          "$ref": "#/definitions/CustomFieldValue"
+        }
+      },
+      "events": {
+        "items": {
+          "$ref": "#/definitions/Event"
+        }
+      },
+      "partner_id": {
+        "type": "integer"
+      }
+    }
+  },
+  "VariationList": {
+    "required": [
+      "variations"
+    ],
+    "properties": {
+      "variations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/Variation"
+        }
+      }
+    }
+  },
+  "Variation": {
+    "required": [
+      "price",
+      "variation_partner_id",
+      "variation_mytime_id"
+    ],
+    "properties": {
+      "price": {
+        "type": "number"
+      },
+      "variation_partner_id": {
+        "type": "string"
+      },
+      "variation_mytime_id": {
+        "type": "string"
+      },
+      "parent_id": {
+        "type": "string"
+      },
+      "variation_employee_id": {
+        "type": "string"
+      },
+      "variation_begin_at": {
+        "type": "string"
+      },
+      "variation_end_at": {
+        "type": "string"
+      }
+    }
+  },
+  "DealVariation": {
+    "required": [
+      "variation_partner_id",
+      "variation_mytime_id",
+      "name"
+    ],
+    "properties": {
+      "variation_partner_id": {
+        "type": "string"
+      },
+      "variation_mytime_id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      }
+    }
+  },
+  "Variations": {
+    "required": [
+      "variations"
+    ],
+    "properties": {
+      "variations": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ServiceVariation"
+        }
+      }
+    }
+  },
+  "ServiceVariation": {
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "service_name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "external_id": {
+        "type": "string"
+      },
+      "id": {
+        "type": "integer"
+      },
+      "duration": {
+        "type": "integer"
+      },
+      "add_on": {
+        "type": "boolean"
+      },
+      "bookable": {
+        "type": "boolean"
+      },
+      "pricings": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/VariationPricings"
+        }
+      }
+    }
+  },
+  "VariationPricings": {},
+  "Pricing": {
+    "required": [
+      "new_min_price",
+      "new_list_price",
+      "existing_list_price",
+      "existing_min_price"
+    ],
+    "properties": {
+      "new_min_price": {
+        "type": "number"
+      },
+      "new_list_price": {
+        "type": "number"
+      },
+      "existing_list_price": {
+        "type": "number"
+      },
+      "existing_min_price": {
+        "type": "number"
+      },
+      "mytime_id": {
+        "type": "integer"
+      }
+    }
+  },
+  "AppointmentPostBody": {
+    "properties": {
+      "booked_by": {
+        "type": "string",
+        "description": "Booked by",
+        "required": false,
+        "default": "merchant",
+        "options": [
+          "merchant",
+          "consumer"
+        ]
+      },
+      "partner_name": {
+        "type": "string",
+        "description": "Partner Name to display in appointment notes",
+        "required": false,
+        "default": "Partner API"
+      },
+      "variations": {
+        "type": "array",
+        "description": "The variations objects",
+        "items": {
+          "$ref": "#/definitions/Variation"
+        }
+      },
+      "notes": {
+        "type": "array",
+        "description": "The notes objects",
+        "items": {
+          "$ref": "#/definitions/Note"
+        }
+      },
+      "custom_field_values": {
+        "type": "array",
+        "description": "Per-appointment custom attribute values",
+        "items": {
+          "$ref": "#/definitions/CustomFieldValue"
+        }
+      }
+    }
+  }
+}

@@ -9,13 +9,13 @@
 </head>
 
 <body>
-  <div id="app">
+  <div id="app" class="app">
     <!-- Login Screen -->
     <div id="login-screen" class="screen active">
       <div class="login-container">
         <div class="card login-card">
           <div class="login-title">
-            <h1>🐕💨 Quicker Checker Inner</h1>
+            <h1>🐕⚡ Quicker Checker Inner</h1>
             <p class="subtitle">Hounds Town Bradenton</p>
           </div>
           <form id="login-form" class="login-form">
@@ -41,7 +41,7 @@
     <div id="main-screen" class="screen hidden">
       <header class="app-header">
         <div class="header-left">
-          <h1>🐕💨 Quicker Checker Inner</h1>
+          <h1>🐕⚡ Quicker Checker Inner</h1>
         </div>
         <div class="header-right">
           <span id="user-name" class="user-name"></span>
@@ -91,10 +91,10 @@
               <div class="form-group">
                 <label for="service-type">Service Type</label>
                 <select id="service-type" class="service-select">
-                  <option value="boarding">Boarding</option>
                   <option value="daycare" selected>Daycare</option>
-                  <option value="evaluation">Evaluation</option>
+                  <option value="boarding">Boarding</option>
                   <option value="spa">Spa Services</option>
+                  <option value="evaluation">Evaluation</option>
                 </select>
               </div>
               <div class="form-group" id="variation-group">
@@ -109,6 +109,60 @@
               <div class="date-input-wrapper">
                 <input type="date" id="checkin-date" class="date-input" />
                 <span class="date-input-icon">📅</span>
+              </div>
+            </div>
+            <div class="date-picker-section hidden" id="checkout-section">
+              <label for="checkout-date">Check-out Date</label>
+              <div class="date-input-wrapper">
+                <input type="date" id="checkout-date" class="date-input" />
+                <span class="date-input-icon">📅</span>
+              </div>
+            </div>
+            <div class="date-picker-section hidden" id="spa-time-section">
+              <label for="spa-time">Appointment Time</label>
+              <div class="date-input-wrapper">
+                <input type="time" id="spa-time" class="date-input time-input" value="09:00" />
+                <span class="date-input-icon">🕐</span>
+              </div>
+            </div>
+            <!-- Spa Services Selection (shown only for Spa service type) -->
+            <div id="spa-services-section" class="spa-services-section hidden">
+              <div class="spa-primary-services">
+                <label class="spa-section-label">Primary Service</label>
+                <div class="spa-radio-group">
+                  <label class="spa-option">
+                    <input type="radio" name="spa-primary" value="townie-bath" checked />
+                    <span class="spa-option-label">🛁 Townie Bath</span>
+                  </label>
+                  <label class="spa-option">
+                    <input type="radio" name="spa-primary" value="townie-bath-deluxe" />
+                    <span class="spa-option-label">✨ Townie Bath Deluxe</span>
+                  </label>
+                  <label class="spa-option">
+                    <input type="radio" name="spa-primary" value="stand-alone-nails" />
+                    <span class="spa-option-label">💅 Stand Alone Nails</span>
+                  </label>
+                </div>
+              </div>
+              <div class="spa-addons">
+                <label class="spa-section-label">Add-ons</label>
+                <div class="spa-checkbox-group">
+                  <label class="spa-option">
+                    <input type="checkbox" name="spa-addon" value="nail-trim" />
+                    <span class="spa-option-label">💅 Nail Trim</span>
+                  </label>
+                  <label class="spa-option">
+                    <input type="checkbox" name="spa-addon" value="teeth-brushing" />
+                    <span class="spa-option-label">🦷 Teeth Brushing</span>
+                  </label>
+                  <label class="spa-option">
+                    <input type="checkbox" name="spa-addon" value="blueberry-facial" />
+                    <span class="spa-option-label">🫐 Blueberry Facial</span>
+                  </label>
+                </div>
+                <div id="spa-bundle-note" class="spa-bundle-note hidden">
+                  ✨ All 3 add-ons selected - "All Add-Ons" bundle will be applied!
+                </div>
               </div>
             </div>
             <div id="checkin-status" class="checkin-status">

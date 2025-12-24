@@ -9,8 +9,11 @@ import { dogCache as cache } from './api/cache';
 import {
     EVALUATION_VARIATION_ID,
     SERVICE_TYPE_NAMES,
-    DAYCARE_VARIATIONS
+    DAYCARE_VARIATIONS,
+    SPA_SERVICE_NAMES
 } from './api/constants';
+import flatpickr from 'flatpickr';
+import 'flatpickr/dist/flatpickr.min.css';
 
 // ==========================================
 // State
@@ -30,8 +33,10 @@ interface AppState {
         petGenderFieldId: number | null;
     };
     variations: Variation[];
+    spaVariations: Variation[];
     isSyncing: boolean;
     syncProgress: number;
+    focusedCardIndex: number;
 }
 
 let state: AppState = {
@@ -48,8 +53,10 @@ let state: AppState = {
         petGenderFieldId: null
     },
     variations: [],
+    spaVariations: [],
     isSyncing: false,
-    syncProgress: 0
+    syncProgress: 0,
+    focusedCardIndex: -1
 };
 
 // ==========================================
@@ -85,12 +92,19 @@ const elements = {
     modalClose: document.getElementById('modal-close') as HTMLButtonElement,
     selectedDogInfo: document.getElementById('selected-dog-info') as HTMLElement,
     checkinDate: document.getElementById('checkin-date') as HTMLInputElement,
+    checkoutSection: document.getElementById('checkout-section') as HTMLElement,
+    checkoutDate: document.getElementById('checkout-date') as HTMLInputElement,
     checkinStatus: document.getElementById('checkin-status') as HTMLElement,
     cancelCheckin: document.getElementById('cancel-checkin') as HTMLButtonElement,
     confirmCheckin: document.getElementById('confirm-checkin') as HTMLButtonElement,
     serviceType: document.getElementById('service-type') as HTMLSelectElement,
     serviceVariation: document.getElementById('service-variation') as HTMLSelectElement,
     variationGroup: document.getElementById('variation-group') as HTMLElement,
+    spaTimeSection: document.getElementById('spa-time-section') as HTMLElement,
+    spaTime: document.getElementById('spa-time') as HTMLInputElement,
+    spaServicesSection: document.getElementById('spa-services-section') as HTMLElement,
+    spaAddonsSection: document.querySelector('.spa-addons') as HTMLElement,
+    spaBundleNote: document.getElementById('spa-bundle-note') as HTMLElement,
 
     // Toast
     toast: document.getElementById('toast') as HTMLElement,
@@ -134,12 +148,27 @@ function setupEventListeners() {
     // Search
     if (elements.dogSearch) {
         elements.dogSearch.addEventListener('input', handleSearch);
+        // Reset focus when search input is focused
+        elements.dogSearch.addEventListener('focus', () => {
+            state.focusedCardIndex = -1;
+            updateCardFocus();
+        });
     }
+
+    // Keyboard navigation for dog cards
+    document.addEventListener('keydown', handleKeyboardNavigation);
 
     // Modal
     if (elements.modalClose) elements.modalClose.addEventListener('click', closeModal);
     if (elements.cancelCheckin) elements.cancelCheckin.addEventListener('click', closeModal);
     if (elements.confirmCheckin) elements.confirmCheckin.addEventListener('click', handleCheckIn);
+
+    // Escape key closes modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !elements.checkinModal.classList.contains('hidden')) {
+            closeModal();
+        }
+    });
 
     // Date picker click-anywhere functionality
     const dateWrapper = document.querySelector('.date-input-wrapper');
@@ -161,30 +190,54 @@ function setupEventListeners() {
         });
     }
 
-    // Service Selection
-    if (elements.serviceType) elements.serviceType.addEventListener('change', updateServiceDropdowns);
-    if (elements.checkinDate) {
-        elements.checkinDate.addEventListener('change', () => {
-            if (elements.serviceType.value === 'daycare') {
-                updateServiceDropdowns();
+    // Spa UI listeners
+    if (elements.spaServicesSection) {
+        elements.spaServicesSection.addEventListener('change', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.matches('input[name="spa-addon"]')) {
+                handleSpaSelection();
+            } else if (target.matches('input[name="spa-primary"]')) {
+                handleSpaPrimarySelection();
             }
         });
     }
-    if (elements.serviceVariation) {
-        elements.serviceVariation.addEventListener('change', () => {
-            // Trigger availability check if date is selected?
-            // For now just letting the user click confirm is fine
-        });
-    }
+}
 
-    // Close modal on backdrop click
-    if (elements.checkinModal) {
-        elements.checkinModal.addEventListener('click', (e) => {
-            if (e.target === elements.checkinModal) {
-                closeModal();
+// Service Selection
+if (elements.serviceType) {
+    elements.serviceType.addEventListener('change', () => {
+        updateServiceDropdowns();
+        // Show/hide spa time picker based on service type
+        if (elements.spaTimeSection) {
+            if (elements.serviceType.value === 'spa') {
+                elements.spaTimeSection.classList.remove('hidden');
+            } else {
+                elements.spaTimeSection.classList.add('hidden');
             }
-        });
-    }
+        }
+    });
+}
+if (elements.checkinDate) {
+    elements.checkinDate.addEventListener('change', () => {
+        if (elements.serviceType.value === 'daycare') {
+            updateServiceDropdowns();
+        }
+    });
+}
+if (elements.serviceVariation) {
+    elements.serviceVariation.addEventListener('change', () => {
+        // Trigger availability check if date is selected?
+        // For now just letting the user click confirm is fine
+    });
+}
+
+// Close modal on backdrop click
+if (elements.checkinModal) {
+    elements.checkinModal.addEventListener('click', (e) => {
+        if (e.target === elements.checkinModal) {
+            closeModal();
+        }
+    });
 }
 
 // ==========================================
@@ -277,7 +330,7 @@ async function showMainScreen() {
 
     // Update user name in header
     if (state.user) {
-        elements.userName.textContent = `${state.user.first_name} ${state.user.last_name}`;
+        elements.userName.innerHTML = `<span style="margin-right: 1rem; font-size: 1.5rem">🐶</span>${state.user.first_name} ${state.user.last_name}`;
     }
 
     // Load company data only (dogs will load when user searches)
@@ -566,6 +619,117 @@ function showSearchPrompt() {
     elements.dogsGrid.innerHTML = '';
     elements.noResults.classList.add('hidden');
     elements.loadingDogs.classList.add('hidden');
+    state.focusedCardIndex = -1;
+}
+
+// ==========================================
+// Keyboard Navigation
+// ==========================================
+
+function handleKeyboardNavigation(e: KeyboardEvent) {
+    // Only handle navigation when we have dogs displayed and modal is not open
+    if (state.filteredDogs.length === 0) return;
+    if (!elements.checkinModal.classList.contains('hidden')) return;
+
+    // Handle search input interactions
+    if (document.activeElement === elements.dogSearch) {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            elements.dogSearch.blur();
+            state.focusedCardIndex = 0;
+            updateCardFocus();
+        }
+        return;
+    }
+
+    const cards = elements.dogsGrid.querySelectorAll('.card');
+    if (cards.length === 0) return;
+
+    // Calculate grid columns (2 columns based on CSS grid-cols-2)
+    const gridColumns = 2;
+
+    switch (e.key) {
+        case 'ArrowDown':
+            e.preventDefault();
+            // Move down one row
+            if (state.focusedCardIndex === -1) {
+                state.focusedCardIndex = 0;
+            } else if (state.focusedCardIndex + gridColumns < cards.length) {
+                state.focusedCardIndex += gridColumns;
+            }
+            updateCardFocus();
+            break;
+
+        case 'ArrowUp':
+            e.preventDefault();
+            // Move up one row
+            if (state.focusedCardIndex >= gridColumns) {
+                state.focusedCardIndex -= gridColumns;
+            } else if (state.focusedCardIndex > 0) {
+                state.focusedCardIndex = 0; // Move to first item if in first row but not 0 (e.g. 1)
+            } else if (state.focusedCardIndex === 0) {
+                // If at top, focus search input
+                state.focusedCardIndex = -1;
+                updateCardFocus();
+                elements.dogSearch.focus();
+            }
+            updateCardFocus();
+            break;
+
+        case 'ArrowRight':
+            e.preventDefault();
+            // Move right one card
+            if (state.focusedCardIndex === -1) {
+                state.focusedCardIndex = 0;
+            } else if (state.focusedCardIndex < cards.length - 1) {
+                state.focusedCardIndex++;
+            }
+            updateCardFocus();
+            break;
+
+        case 'ArrowLeft':
+            e.preventDefault();
+            // Move left one card
+            if (state.focusedCardIndex > 0) {
+                state.focusedCardIndex--;
+            } else if (state.focusedCardIndex === 0) {
+                // optional: go back to search?
+            }
+            updateCardFocus();
+            break;
+
+        case 'Enter':
+            // Open modal for focused card
+            if (state.focusedCardIndex >= 0 && state.focusedCardIndex < state.filteredDogs.length) {
+                e.preventDefault();
+                const dog = state.filteredDogs[state.focusedCardIndex];
+                if (dog) openModal(dog);
+            }
+            break;
+
+        case 'Escape':
+            // Clear focus when Escape is pressed
+            if (elements.checkinModal.classList.contains('hidden')) {
+                state.focusedCardIndex = -1;
+                updateCardFocus();
+                elements.dogSearch.focus();
+            }
+            break;
+    }
+}
+
+function updateCardFocus() {
+    const cards = elements.dogsGrid.querySelectorAll('.card');
+
+    cards.forEach((card, index) => {
+        const htmlCard = card as HTMLElement;
+        if (index === state.focusedCardIndex) {
+            htmlCard.classList.add('card-focused');
+            htmlCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            htmlCard.classList.remove('card-focused');
+        }
+    });
 }
 
 // ==========================================
@@ -588,16 +752,77 @@ async function loadVariations() {
     }
 }
 
-function updateServiceDropdowns() {
+function handleSpaSelection() {
+    // Check checkboxes
+    const checkboxes = document.querySelectorAll('input[name="spa-addon"]:checked');
+    const checkedCount = checkboxes.length;
+
+    // Toggle Bundle Note if 3 selected
+    if (checkedCount === 3) {
+        elements.spaBundleNote.classList.remove('hidden');
+    } else {
+        elements.spaBundleNote.classList.add('hidden');
+    }
+}
+
+function handleSpaPrimarySelection() {
+    const primary = document.querySelector('input[name="spa-primary"]:checked') as HTMLInputElement;
+    if (primary && primary.value === 'stand-alone-nails') {
+        if (elements.spaAddonsSection) {
+            elements.spaAddonsSection.classList.add('hidden');
+            // Uncheck addons
+            const addons = document.querySelectorAll('input[name="spa-addon"]');
+            addons.forEach((el) => { (el as HTMLInputElement).checked = false; });
+            handleSpaSelection(); // Update bundle note state
+        }
+    } else {
+        if (elements.spaAddonsSection) {
+            elements.spaAddonsSection.classList.remove('hidden');
+        }
+    }
+}
+
+async function updateServiceDropdowns() {
     const serviceType = elements.serviceType.value;
     const select = elements.serviceVariation;
-    // const group = elements.variationGroup; // Unused for now
 
-    // Clear existing
+    // Reset visibility
+    elements.spaServicesSection.classList.add('hidden');
+    elements.variationGroup.classList.add('hidden');
+
+    // Clear existing dropdown
     select.innerHTML = '';
+
+    if (serviceType === 'spa') {
+        elements.spaServicesSection.classList.remove('hidden');
+        elements.checkoutSection?.classList.add('hidden'); // Hide for spa
+
+        // Fetch spa-specific variations if not loaded
+        if (state.spaVariations.length === 0) {
+            try {
+                const result = await api.getSpaVariations();
+                if (result.success && result.variations) {
+                    state.spaVariations = result.variations;
+                    console.log('[spa_filter] Spa variations loaded:', state.spaVariations.map(v => v.name));
+                }
+            } catch (error) {
+                console.error('[spa_filter] Error fetching spa variations:', error);
+            }
+        }
+
+        // Initialize UI state
+        handleSpaSelection();
+        return;
+    }
+
+    // Standard filtering for other types
+    elements.variationGroup.classList.remove('hidden');
 
     // Filter variations
     let filtered: Variation[] = [];
+
+    // Check-out date is hidden by default (only for Boarding)
+    elements.checkoutSection?.classList.add('hidden');
 
     if (serviceType === 'daycare') {
         // Special logic for Daycare (hardcoded IDs as they are hidden in API)
@@ -627,24 +852,16 @@ function updateServiceDropdowns() {
     }
 
     if (serviceType === 'boarding') {
+        elements.checkoutSection?.classList.remove('hidden');
         filtered = state.variations.filter(v =>
             v.name.toLowerCase().includes('boarding') &&
             !v.name.toLowerCase().includes('shelter')
         );
-        elements.variationGroup.classList.remove('hidden');
     } else if (serviceType === 'evaluation') {
         filtered = state.variations.filter(v => v.name.toLowerCase().includes('evaluation'));
         // Show all if no specific 'evaluation' keyword found? Or just assume setup is correct.
         // If filtered is empty, maybe show all 'Daycare' style variations?
         // For now, strict filtering is safer.
-        elements.variationGroup.classList.remove('hidden');
-    } else if (serviceType === 'spa') {
-        filtered = state.variations.filter(v =>
-            !v.name.toLowerCase().includes('boarding') &&
-            !v.name.toLowerCase().includes('daycare') &&
-            !v.name.toLowerCase().includes('evaluation')
-        );
-        elements.variationGroup.classList.remove('hidden');
     }
 
     // Toggle note for evaluation
@@ -656,7 +873,9 @@ function updateServiceDropdowns() {
         noteEl.style.marginTop = '0.5rem';
         noteEl.style.fontSize = '0.9rem';
         noteEl.style.color = 'var(--primary-color)';
-        elements.serviceType.parentNode?.insertBefore(noteEl, elements.serviceType.nextSibling);
+        if (elements.serviceType.parentNode) {
+            elements.serviceType.parentNode.insertBefore(noteEl, elements.serviceType.nextSibling);
+        }
     }
 
     if (serviceType === 'evaluation') {
@@ -682,7 +901,7 @@ function updateServiceDropdowns() {
             option.textContent = v.name;
             select.appendChild(option);
         });
-        // Select first item
+
         select.selectedIndex = 0;
     }
 }
@@ -699,6 +918,8 @@ function renderDogs() {
     }
 
     elements.noResults.classList.add('hidden');
+    // Reset keyboard focus when new results are rendered
+    state.focusedCardIndex = -1;
     // Using grid layout from new CSS
     elements.dogsGrid.className = 'grid grid-cols-2';
     elements.dogsGrid.innerHTML = state.filteredDogs.map(dog => createDogCard(dog)).join('');
@@ -727,9 +948,9 @@ function createDogCard(dog: Dog) {
       ${photoHtml}
       <div class="dog-info">
         <h3 class="" style="margin: 0; font-size: 1.25rem; color: var(--primary-color);">${escapeHtml(dog.name)}</h3>
-        <p class="" style="margin: 0.25rem 0; color: var(--text-muted); font-size: 0.9rem;">Owner: ${escapeHtml(extendedDog.owner_last_name || 'Unknown')}</p>
+        <p class="" style="margin: 0.25rem 0; color: var(--text-muted); font-size: 0.9rem;">Owner: ${escapeHtml(`${extendedDog.owner_first_name || ''} ${extendedDog.owner_last_name || ''}`.trim() || 'Unknown')}</p>
         <div class="dog-details" style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
-          ${dog.gender ? `<span class="syncing-badge">${escapeHtml(dog.gender)}</span>` : ''}
+          ${dog.gender ? `<span class="syncing-badge gender-badge-${dog.gender.toLowerCase()}">${escapeHtml(dog.gender)}</span>` : ''}
           <span class="syncing-badge">${escapeHtml(dog.breed || 'Unknown')}</span>
         </div>
       </div>
@@ -760,7 +981,7 @@ async function openModal(dog: Dog) {
     <div class="selected-dog-photo">${photoHtml}</div>
     <div class="selected-dog-details">
       <h3>${escapeHtml(dog.name)}</h3>
-      <p>Owner: ${escapeHtml(extendedDog.owner_last_name || 'Unknown')}</p>
+      <p>Owner: ${escapeHtml(`${extendedDog.owner_first_name || ''} ${extendedDog.owner_last_name || ''}`.trim() || 'Unknown')}</p>
       <p>${escapeHtml(dog.breed || '')}${dog.gender ? ` • ${escapeHtml(dog.gender)}` : ''}${dog.color ? ` • ${escapeHtml(dog.color)}` : ''}</p>
     </div>
   `;
@@ -772,6 +993,38 @@ async function openModal(dog: Dog) {
 
     // Set date to today by default
     elements.checkinDate.value = new Date().toISOString().split('T')[0];
+
+    // Initialize flatpickr for date picker
+    flatpickr('#checkin-date', {
+        dateFormat: 'Y-m-d',
+        defaultDate: 'today',
+        minDate: 'today'
+    });
+
+    // Initialize checkout date (default tomorrow)
+    if (elements.checkoutDate) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        elements.checkoutDate.value = tomorrow.toISOString().split('T')[0];
+
+        flatpickr('#checkout-date', {
+            dateFormat: 'Y-m-d',
+            defaultDate: tomorrow,
+            minDate: 'today'
+        });
+    }
+
+    // Initialize flatpickr for time picker (spa)
+    if (elements.spaTime) {
+        flatpickr('#spa-time', {
+            enableTime: true,
+            noCalendar: true,
+            dateFormat: 'H:i',
+            defaultDate: '09:00',
+            time_24hr: false,
+            minuteIncrement: 15
+        });
+    }
 
     // Load variations
     if (state.variations.length === 0) {
@@ -786,6 +1039,30 @@ async function openModal(dog: Dog) {
 function closeModal() {
     elements.checkinModal.classList.add('hidden');
     state.selectedDog = null;
+}
+
+// Reset the check-in form to defaults after successful booking
+function resetCheckinForm() {
+    // Reset service type to daycare
+    elements.serviceType.value = 'daycare';
+
+    // Clear spa radio buttons
+    const spaRadios = document.querySelectorAll<HTMLInputElement>('input[name="spa-primary"]');
+    spaRadios.forEach(radio => radio.checked = false);
+
+    // Clear spa checkboxes
+    const spaCheckboxes = document.querySelectorAll<HTMLInputElement>('.spa-addons input[type="checkbox"]');
+    spaCheckboxes.forEach(checkbox => checkbox.checked = false);
+
+    // Hide spa section and show regular variation dropdown
+    elements.spaServicesSection?.classList.add('hidden');
+    elements.variationGroup?.classList.remove('hidden');
+
+    // Clear status container
+    elements.checkinStatus.innerHTML = '';
+
+    // Trigger dropdown update
+    updateServiceDropdowns();
 }
 
 // ==========================================
@@ -808,37 +1085,111 @@ async function handleCheckIn() {
 
     try {
         const selectedDate = elements.checkinDate.value || new Date().toISOString().split('T')[0];
-        const variationId = elements.serviceVariation.value;
+        let variationId = elements.serviceVariation.value;
+        let searchVariationId = variationId;
         const serviceType = elements.serviceType.value;
 
-        // Use Direct Booking for Daycare and Evaluation (Bypass Marketplace restrictions)
-        const isBypassService = serviceType === SERVICE_TYPE_NAMES.DAYCARE || serviceType === SERVICE_TYPE_NAMES.EVALUATION;
+        // Spa Logic: Determine variation IDs
+        if (serviceType === 'spa') {
+            const getSpaId = (name: string) => state.spaVariations.find(v => v.name === name)?.id;
+            const primaryVal = (document.querySelector('input[name="spa-primary"]:checked') as HTMLInputElement)?.value;
+            const addons = Array.from(document.querySelectorAll('input[name="spa-addon"]:checked'))
+                .map(el => (el as HTMLInputElement).value);
 
-        if (isBypassService) {
+            const ids: string[] = [];
+
+            // Primary Service
+            let primaryId: string | undefined;
+            if (primaryVal === 'townie-bath') primaryId = String(getSpaId(SPA_SERVICE_NAMES.PRIMARY.TOWNIE_BATH));
+            else if (primaryVal === 'townie-bath-deluxe') primaryId = String(getSpaId(SPA_SERVICE_NAMES.PRIMARY.TOWNIE_BATH_DELUXE));
+            else if (primaryVal === 'stand-alone-nails') primaryId = String(getSpaId(SPA_SERVICE_NAMES.PRIMARY.STAND_ALONE_NAILS));
+
+            if (primaryId) {
+                ids.push(primaryId);
+                searchVariationId = primaryId;
+            }
+
+            // Add-ons (Bundle Logic)
+            if (addons.length === 3) {
+                const bundleId = getSpaId(SPA_SERVICE_NAMES.BUNDLE.ALL_ADDONS);
+                if (bundleId) ids.push(String(bundleId));
+            } else {
+                if (addons.includes('nail-trim')) {
+                    const id = getSpaId(SPA_SERVICE_NAMES.ADDONS.NAIL_TRIM);
+                    if (id) ids.push(String(id));
+                }
+                if (addons.includes('teeth-brushing')) {
+                    const id = getSpaId(SPA_SERVICE_NAMES.ADDONS.TEETH_BRUSHING);
+                    if (id) ids.push(String(id));
+                }
+                if (addons.includes('blueberry-facial')) {
+                    const id = getSpaId(SPA_SERVICE_NAMES.ADDONS.BLUEBERRY_FACIAL);
+                    if (id) ids.push(String(id));
+                }
+            }
+
+            variationId = ids.join(',');
+            console.log('[checkin] Spa Booking IDs:', variationId, 'Names:', ids.map(id => state.spaVariations.find(v => String(v.id) === id)?.name));
+
+            if (!variationId) {
+                throw new Error('Please select at least one spa service');
+            }
+
+            console.log('[checkin] Spa Booking IDs:', variationId, 'Search ID:', searchVariationId);
+        }
+
+        // Use Direct Booking for ALL services (Partner API)
+        {
             updateStatus(statusContainer, `Creating direct booking for ${selectedDate}...`, 'active');
 
             // Find begin/end times (default to current time if no times found, or use a mock slot)
             // For now, we'll try to find a real slot if possible, but if not found, we use current time
-            let beginAt = `${selectedDate}T09:00:00Z`; // Default to 9am
-            let endAt = `${selectedDate}T17:00:00Z`;   // Default to 5pm
+            let beginAt = `${selectedDate}T12:00:00Z`; // Default to 7am EST (12:00 UTC)
+            let endAt = `${selectedDate}T22:00:00Z`;   // Default to 5pm EST (22:00 UTC)
+
+            // Overwrite endAt for Boarding if selected
+            if (serviceType === 'boarding' && elements.checkoutDate?.value) {
+                // Boarding ends at 12pm EST on checkout date (17:00 UTC)
+                endAt = `${elements.checkoutDate.value}T17:00:00Z`;
+            }
 
             try {
-                const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
+                // Only fetch open times if NOT boarding (or if we want to confirm start time?)
+                // MyTime API might fail if we ask for 2-week range slots?
+                // For now, let's skip getOpenTimes for Boarding to avoid complexity, or just use it for start time?
+                // Let's TRY to get open times but fallback safely.
+                const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, searchVariationId);
                 if (timesResult.success && timesResult.openTimes?.length > 0) {
                     beginAt = timesResult.openTimes[0].begin_at;
-                    endAt = timesResult.openTimes[0].end_at;
+                    if (serviceType !== 'boarding') {
+                        endAt = timesResult.openTimes[0].end_at;
+                    }
                 }
             } catch (e) {
                 console.warn('Could not fetch open times for direct booking, using defaults.');
             }
 
-            const directResult = await api.createDirectAppointment({
+            // Prepare payload with variations array for spa or single variationId for others
+            const ids = variationId.split(',');
+            const directPayload: any = {
                 dogId: dog.id,
-                variationId: variationId,
                 beginAt: beginAt,
                 endAt: endAt,
                 clientId: dog.client_id
-            }, state.authToken);
+            };
+
+            if (ids.length > 1 || serviceType === 'spa') {
+                // Use 'variations' array for Spa services (Partner API format)
+                directPayload.variations = ids.map(id => ({
+                    variation_mytime_id: id,
+                    variation_begin_at: beginAt,
+                    variation_end_at: endAt
+                }));
+            } else {
+                directPayload.variationId = variationId;
+            }
+
+            const directResult = await api.createDirectAppointment(directPayload, state.authToken);
 
             if (!directResult.success) {
                 throw new Error(directResult.error || 'Failed to create direct appointment');
@@ -847,78 +1198,23 @@ async function handleCheckIn() {
             const appointmentId = directResult.appointment?.id;
             updateStatus(statusContainer, 'Appointment created ✓', 'complete');
 
-            // Step 6: Check in (reused)
-            if (appointmentId) {
+            // Step 6: Check in - ONLY for Daycare appointments
+            // Spa and Boarding should NOT auto-check in
+            if (appointmentId && serviceType === 'daycare') {
                 updateStatus(statusContainer, 'Checking in...', 'active');
                 await api.checkInAppointment(appointmentId, state.authToken);
                 updateStatus(statusContainer, 'Checked in ✓', 'complete');
             }
-        } else {
-            // ORIGINAL FLOW for Boarding / Spa (Marketplace API)
-            updateStatus(statusContainer, `Finding available time slot for ${selectedDate}...`, 'active');
-            const timesResult = await api.getOpenTimes(dog.id, selectedDate, state.authToken, variationId);
-
-            if (!timesResult.success || !timesResult.openTimes?.length) {
-                throw new Error(`No available time slots for ${selectedDate}`);
-            }
-
-            const timeSlot = timesResult.openTimes[0];
-            updateStatus(statusContainer, 'Found time slot ✓', 'complete');
-
-            // Step 2: Create cart
-            updateStatus(statusContainer, 'Creating appointment...', 'active');
-            const cartResult = await api.createCart(state.user?.id || 0, state.authToken);
-
-            if (!cartResult.success) {
-                throw new Error('Failed to create cart');
-            }
-
-            const cartId = cartResult.cart.id;
-            updateStatus(statusContainer, 'Cart created ✓', 'complete');
-
-            // Step 3: Add cart item
-            updateStatus(statusContainer, 'Adding service to cart...', 'active');
-            const itemResult = await api.addCartItem(cartId, {
-                dogId: dog.id,
-                beginAt: timeSlot.begin_at,
-                endAt: timeSlot.end_at,
-                dealId: timeSlot.deal_id,
-                variationId: variationId
-            }, state.authToken);
-
-            if (!itemResult.success) {
-                throw new Error('Failed to add service to cart');
-            }
-            updateStatus(statusContainer, 'Service added ✓', 'complete');
-
-            // Step 4: Update cart with user
-            updateStatus(statusContainer, 'Confirming booking...', 'active');
-            await api.updateCart(cartId, state.user?.id || 0, state.authToken);
-
-            // Step 5: Create purchase
-            const purchaseResult = await api.createPurchase(cartId, dog.id, state.authToken);
-
-            if (!purchaseResult.success) {
-                throw new Error('Failed to complete booking');
-            }
-            updateStatus(statusContainer, 'Booking confirmed ✓', 'complete');
-
-            // Step 6: Check in
-            updateStatus(statusContainer, 'Checking in...', 'active');
-
-            // Get appointment ID from purchase
-            const appointmentId = purchaseResult.purchase?.appointments?.[0]?.id;
-
-            if (appointmentId) {
-                await api.checkInAppointment(appointmentId, state.authToken);
-                updateStatus(statusContainer, 'Checked in ✓', 'complete');
-            } else {
-                updateStatus(statusContainer, 'Appointment created ✓', 'complete');
-            }
         }
 
-        // Success!
-        showToast(`${dog.name} checked in! 🎉`, 'success');
+        // Success message varies by service type
+        const successMessage = serviceType === 'daycare'
+            ? `${dog.name} checked in! 🎉`
+            : `${dog.name} booked for ${serviceType.charAt(0).toUpperCase() + serviceType.slice(1)}! 🎉`;
+        showToast(successMessage, 'success');
+
+        // Reset form for next use
+        resetCheckinForm();
 
         setTimeout(() => {
             closeModal();

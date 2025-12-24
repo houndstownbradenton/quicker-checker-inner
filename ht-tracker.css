@@ -991,6 +991,12 @@ input[type="file"] {
     align-items: center;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
 .header-actions {
     display: flex;
     gap: 0.5rem;

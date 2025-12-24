@@ -242,7 +242,12 @@ export async function createPurchase(cartId: number, dogId: number, authToken: s
  */
 export async function createDirectAppointment(data: {
     dogId: number;
-    variationId: string;
+    variationId?: string;
+    variations?: Array<{
+        variation_mytime_id: string;
+        variation_begin_at?: string;
+        variation_end_at?: string;
+    }>;
     beginAt: string;
     endAt: string;
     employeeId?: string;
@@ -263,6 +268,14 @@ export async function checkInAppointment(appointmentId: number, authToken: strin
  */
 export async function getVariations(authToken: string): Promise<VariationsResponse> {
     return apiRequest<VariationsResponse>('GET', '/variations', null, authToken);
+}
+
+/**
+ * Get spa service variations (uses Spa Services employee)
+ */
+export async function getSpaVariations(): Promise<VariationsResponse> {
+    const SPA_SERVICES_EMPLOYEE_ID = '295289';
+    return apiRequest<VariationsResponse>('GET', `/variations/by-employee/${SPA_SERVICES_EMPLOYEE_ID}`);
 }
 
 /**

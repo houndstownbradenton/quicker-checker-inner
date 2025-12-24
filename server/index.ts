@@ -5,6 +5,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { enrichDogsWithPhotos } from './supabase.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,12 +24,85 @@ const DAYCARE_VARIATIONS = {
 
 const EVALUATION_VARIATION_ID = '91420537';
 
-const RESOURCE_MAP: Record<string, string> = {
-    [DAYCARE_VARIATIONS.weekday]: '295287',
-    [DAYCARE_VARIATIONS.saturday]: '295287',
-    [EVALUATION_VARIATION_ID]: '295290', // Evaluation Staff
-    '99860007': '295289'                // Bath (Grooming) -> Spa Services Staff
+// Employee/Staff IDs
+const EMPLOYEE_IDS = {
+    boarding: '295288',
+    spaServices: '295289',
+    evaluation: '295290',
+    daycare: '295287'
 };
+
+const RESOURCE_MAP: Record<string, string> = {
+    [DAYCARE_VARIATIONS.weekday]: EMPLOYEE_IDS.daycare,
+    [DAYCARE_VARIATIONS.saturday]: EMPLOYEE_IDS.daycare,
+    [EVALUATION_VARIATION_ID]: EMPLOYEE_IDS.evaluation,
+    // Spa variations will use spaServices employee
+};
+
+// Variation ID to name lookup for logging
+const VARIATION_NAMES: Record<string, string> = {
+    '91629241': 'Daycare',
+    '92628859': 'Saturday Daycare',
+    '110709520': 'Resident Daycare',
+    '91420537': 'Evaluation',
+    '99860007': 'Bath (Primary)',
+    '91629719': 'Townie Bath',
+    '91629630': 'Townie Deluxe Bath',
+    '91425203': 'Nails',
+    '106411403': 'Stand Alone Nails',
+    '91425254': 'Blueberry Facial',
+    '91425350': 'Teeth Brushing',
+    '110883216': 'All Add-Ons',
+    '91404079': 'Boarding - 1 Dog Townhome',
+    '91404147': 'Boarding - 1 Dog Luxury Suite',
+    '111734724': 'Boarding - 1 Dog Double Suite'
+};
+
+// Variation IDs that are add-ons (need a parent service)
+const ADD_ON_VARIATION_IDS: Set<string> = new Set([
+    '91629719',   // Townie Bath
+    '91629630',   // Townie Deluxe Bath
+    '91425203',   // Nails
+    '106411403',  // Stand Alone Nails
+    '91425254',   // Blueberry Facial
+    '91425350',   // Teeth Brushing
+    '110883216',  // All Add-Ons
+    '112837451',  // Use Staff: SPA SERVICES
+    '112837449',  // Use Staff: FEE
+    '110763601',  // After 12pm Check Out
+]);
+
+// Dynamic variation cache - populated from API at startup
+interface VariationInfo {
+    id: string;
+    name: string;
+    duration: number;  // in minutes
+    add_on: boolean;
+    price: number;
+}
+
+const variationCache: Map<string, VariationInfo> = new Map();
+
+// Get duration for a variation
+function getVariationDuration(varId: string): number {
+    const cached = variationCache.get(varId);
+    if (cached && cached.duration > 0) return cached.duration;
+    return 15; // Default 15 min if unknown
+}
+
+// Get duration as the API sees it (from cache)
+function getApiDuration(varId: string): number {
+    const cached = variationCache.get(varId);
+    return cached?.duration ?? 0;
+}
+
+// Get variation info from cache
+function getVariationInfo(varId: string): VariationInfo | undefined {
+    return variationCache.get(varId);
+}
+
+// Primary Bath service ID - used as parent for spa add-ons
+const SPA_PRIMARY_SERVICE_ID = '99860007';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -111,6 +185,45 @@ async function partnerApiRequest(method: string, endpoint: string, dataOrParams:
             console.error(`Partner API Error Details:`, JSON.stringify(error.response.data.errors, null, 2));
         }
         throw error;
+    }
+}
+
+// Load and cache all variations from Partner API
+async function loadVariationsCache(force: boolean = false): Promise<void> {
+    try {
+        if (force) {
+            console.log('[cache] Forcing fresh load of variations from Partner API...');
+        } else if (variationCache.size > 0) {
+            return; // Already loaded and not forcing refresh
+        }
+
+        const result = await partnerApiRequest('GET', '/variations', {
+            location_mytime_id: LOCATION_ID
+        });
+
+        const variations = result.variations || [];
+        if (force) console.log(`[cache] Found ${variations.length} variations`);
+
+        for (const v of variations) {
+            const id = String(v.id || v.mytime_id);
+            const info: VariationInfo = {
+                id,
+                name: v.name || 'Unknown',
+                duration: v.duration || 0,
+                add_on: v.add_on || false,
+                price: v.pricings?.[0]?.existing_list_price || v.price || 0
+            };
+            variationCache.set(id, info);
+
+            // Also update the name lookup
+            if (info.name && info.name !== 'Unknown') {
+                VARIATION_NAMES[id] = info.name;
+            }
+        }
+
+        if (force) console.log(`[cache] Refreshed ${variationCache.size} variations`);
+    } catch (error: any) {
+        console.error('[cache] Failed to load variations cache:', error.message);
     }
 }
 
@@ -248,6 +361,33 @@ app.get('/api/variations', async (req: Request, res: Response) => {
     }
 });
 
+// Get variations for a specific employee (e.g., Spa Services)
+app.get('/api/variations/by-employee/:employeeId', async (req: Request, res: Response) => {
+    try {
+        const { employeeId } = req.params;
+
+        // Try Partner API /variations with employee_id and location_mytime_id
+        const result = await partnerApiRequest('GET', '/variations', {
+            employee_id: employeeId,
+            location_mytime_id: LOCATION_ID
+        });
+
+        console.log(`[variations_by_employee] Employee ${employeeId} variations:`,
+            (result.variations || []).map((v: any) => v.name));
+
+        res.json({
+            success: true,
+            variations: result.variations || []
+        });
+    } catch (error: any) {
+        console.error(`[variations_by_employee] Error:`, error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || 'Failed to fetch employee variations'
+        });
+    }
+});
+
 // Get all dogs (pets/children) for authenticated user
 app.get('/api/dogs', async (req: Request, res: Response) => {
     try {
@@ -257,9 +397,14 @@ app.get('/api/dogs', async (req: Request, res: Response) => {
         }
 
         const result = await mytimeRequest('GET', `/user/children?company_id=${COMPANY_ID}&include_label=true`, null, authToken);
+        const dogs = result.children || [];
+
+        // Enrich dogs with photos from Supabase
+        await enrichDogsWithPhotos(dogs);
+
         res.json({
             success: true,
-            dogs: result.children || []
+            dogs: dogs
         });
     } catch (error: any) {
         res.status(error.response?.status || 500).json({
@@ -277,14 +422,49 @@ app.get('/api/employees', async (req: Request, res: Response) => {
         const locId = locationId || LOCATION_ID;
         const perPage = per_page || 50;
         const result = await mytimeRequest('GET', `/companies/${COMPANY_ID}/employees?location_id=${locId}&per_page=${perPage}`);
+
+        // Log employee names and IDs for debugging
+        const employees = result.employees || [];
+        console.log('[employees] Found employees:', employees.map((e: any) => ({
+            id: e.id || e.mytime_id,
+            name: e.name || `${e.first_name} ${e.last_name}`,
+            nickname: e.nickname
+        })));
+
         res.json({
             success: true,
-            employees: result.employees || []
+            employees: employees
         });
     } catch (error: any) {
         res.status(error.response?.status || 500).json({
             success: false,
             error: error.response?.data?.errors || 'Failed to fetch employees'
+        });
+    }
+});
+
+// Get employees via Partner API (better data)
+app.get('/api/employees/partner', async (req: Request, res: Response) => {
+    try {
+        const result = await partnerApiRequest('GET', '/employees');
+        const employees = result.employees || [];
+
+        // Log for debugging
+        console.log('[partner_employees] Found employees:', employees.map((e: any) => ({
+            mytime_id: e.mytime_id,
+            name: e.name || `${e.first_name || ''} ${e.last_name || ''}`.trim(),
+            nickname: e.nickname
+        })));
+
+        res.json({
+            success: true,
+            employees: employees
+        });
+    } catch (error: any) {
+        console.error('[partner_employees] Error:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            success: false,
+            error: error.response?.data?.errors || 'Failed to fetch employees from Partner API'
         });
     }
 });
@@ -374,6 +554,9 @@ app.get('/api/dogs/search', async (req: Request, res: Response) => {
 
         console.log(`Search for "${query}": ${clients.length} clients, ${matchedDogs.length} matched dogs`);
 
+        // Enrich dogs with photos from Supabase
+        await enrichDogsWithPhotos(matchedDogs);
+
         res.json({
             success: true,
             dogs: matchedDogs
@@ -409,7 +592,7 @@ app.get('/api/dogs/sync', async (req, res) => {
         });
 
         const clients = clientsResult.clients || [];
-        const totalClients = clientsResult.total_count || clients.length;
+        const totalClients = clientsResult.total_count || clientsResult.count || clients.length;
         const dogs = [];
 
         for (const client of clients) {
@@ -426,6 +609,9 @@ app.get('/api/dogs/sync', async (req, res) => {
                 }
             }
         }
+
+        // Enrich dogs with photos from Supabase
+        await enrichDogsWithPhotos(dogs);
 
         res.json({
             success: true,
@@ -491,38 +677,28 @@ app.get('/api/open-times', async (req: Request, res: Response) => {
                 endHour = 17; // 5 PM
             }
 
-            // For today, ensure start time is in the future
-            const now = new Date();
-            const selectedYMD = selectedDate;
-            const nowYMD = now.toISOString().split('T')[0];
+            // Static business hours - Daycare: M-F 7a-7p, Sat 9a-5p
+            const startStr = `${String(startHour).padStart(2, '0')}:00:00`;
+            const endStr = `${String(endHour).padStart(2, '0')}:00:00`;
 
-            if (selectedYMD === nowYMD) {
-                const currentHour = now.getHours();
-                if (currentHour >= 7) {
-                    startHour = currentHour + 1; // Start next hour
-                }
-            }
-
-            // Start hour may have been bumped past end hour?
-            if (startHour >= endHour) {
-                console.log('[open_times] Mock slot skipped: Closed or time passed.');
-                openTimes = [];
-            } else {
-                // Format: HH:00:00
-                const startStr = `${String(startHour).padStart(2, '0')}:00:00`;
-                const endStr = `${String(endHour).padStart(2, '0')}:00:00`;
-
-                openTimes = [{
-                    start: `${selectedDate}T${startStr}-05:00`,
-                    end: `${selectedDate}T${endStr}-05:00`,
-                    begin_at: `${selectedDate}T${startStr}-05:00`,
-                    end_at: `${selectedDate}T${endStr}-05:00`,
-                    deal_id: 261198
-                }];
-            }
+            openTimes = [{
+                start: `${selectedDate}T${startStr}-05:00`,
+                end: `${selectedDate}T${endStr}-05:00`,
+                begin_at: `${selectedDate}T${startStr}-05:00`,
+                end_at: `${selectedDate}T${endStr}-05:00`,
+                deal_id: 261198
+            }];
         }
 
         console.log(`[open_times] Sending ${openTimes.length} slots.`);
+
+        // Log first 3 slots for debugging
+        if (openTimes.length > 0) {
+            console.log(`[open_times] Sample slots:`);
+            openTimes.slice(0, 3).forEach((slot: any, i: number) => {
+                console.log(`  Slot ${i + 1}: begin_at=${slot.begin_at}, end_at=${slot.end_at}`);
+            });
+        }
 
         res.json({
             success: true,
@@ -650,7 +826,7 @@ app.post('/api/purchase', async (req: Request, res: Response) => {
         const { cartId, dogId } = req.body;
 
         const result = await mytimeRequest('POST', '/purchases', {
-            note: 'Quick check-in via Quicker Checker',
+            note: 'Appointment scheduled with Quicker Checker Inner app.',
             referrer: 'express_checkout',
             cart_id: cartId,
             is_embedded: true,
@@ -675,38 +851,218 @@ app.post('/api/purchase', async (req: Request, res: Response) => {
 // Direct booking bypass using Partners API (to bypass "bookable: false" restriction)
 app.post('/api/appointments/direct', async (req: Request, res: Response) => {
     try {
-        const { dogId, variationId, beginAt, endAt, employeeId, clientId } = req.body;
+        // Ensure variation cache is fresh before booking
+        await loadVariationsCache(true);
 
-        // Determine employee ID: use provided one, or look up from RESOURCE_MAP
-        const finalEmployeeId = employeeId || RESOURCE_MAP[variationId];
+        const { dogId, variationId, variations, beginAt, endAt, employeeId, clientId, notes } = req.body;
 
-        if (!finalEmployeeId) {
-            console.error(`[direct_booking] No employee found for variation ${variationId}`);
-            return res.status(400).json({
-                success: false,
-                error: `No employee/resource mapping found for variation ${variationId}`
+        // Build variations array - either from provided array or from single variationId
+        let variationsArray: any[] = [];
+        let customEndAt: string | undefined;
+
+        // Helper to get variation name for logging
+        const getVarName = (id: string) => VARIATION_NAMES[id] || `Unknown(${id})`;
+
+        let appointmentEndAt = endAt; // Initialize with request param, will update with strict API calculation
+
+        if (variations && Array.isArray(variations) && variations.length > 0) {
+            // Extract variation IDs from the request
+            let requestedVarIds = variations.map((v: any) => String(v.variation_mytime_id || v.variationId));
+
+            // Log the requested services with durations from cache
+            const serviceInfo = requestedVarIds.map(id => {
+                const dur = getVariationDuration(id);
+                const info = getVariationInfo(id);
+                return `${getVarName(id)}(${dur}min, $${info?.price ?? 0})`;
+            }).join(', ');
+            console.log(`[direct_booking] Requested services: ${serviceInfo}`);
+
+            // Check if ALL requested variations are add-ons
+            const allAreAddOns = requestedVarIds.every(id => ADD_ON_VARIATION_IDS.has(id));
+
+            if (allAreAddOns) {
+                console.log('[direct_booking] All variations are add-ons - prepending primary Bath service');
+                // Prepend the primary Bath service as the parent
+                requestedVarIds = [SPA_PRIMARY_SERVICE_ID, ...requestedVarIds];
+            }
+
+            // Define primary variation ID (first service)
+            const primaryVariationId = requestedVarIds[0];
+
+            // Calculate END_AT strictly based on API definition (ignoring fallbacks) to pass validation
+            // API sums durations of non-buffer segments (non-add-ons)
+            let apiDefinedDuration = 0;
+            requestedVarIds.forEach(id => {
+                const info = getVariationInfo(id);
+                if (!info?.add_on) { // Only sum non-add-on durations
+                    apiDefinedDuration += getApiDuration(id);
+                }
             });
+            const apiEndAt = new Date(new Date(beginAt).getTime() + apiDefinedDuration * 60 * 1000).toISOString().replace('.000Z', 'Z');
+            console.log(`[direct_booking] API Defined Duration (Strict): ${apiDefinedDuration}min, End: ${apiEndAt}`);
+
+            // Calculate REAL total duration (using fallbacks) for logs
+            const totalRealDuration = requestedVarIds.reduce((sum, id) => sum + getVariationDuration(id), 0);
+            console.log(`[direct_booking] Total real duration: ${totalRealDuration}min`);
+
+            let currentStart = new Date(beginAt);
+
+            // Build variations - Staggered based on actual duration
+            variationsArray = requestedVarIds.map((varId: string, index: number) => {
+                const varEmployeeId = RESOURCE_MAP[varId] || EMPLOYEE_IDS.spaServices;
+                const varDuration = getVariationDuration(varId);
+                const varInfo = getVariationInfo(varId);
+                const varPrice = varInfo?.price ?? 0;
+
+                const varBegin = currentStart.toISOString().replace('.000Z', 'Z');
+                currentStart = new Date(currentStart.getTime() + varDuration * 60 * 1000);
+                const varEnd = currentStart.toISOString().replace('.000Z', 'Z');
+
+                const variation: any = {
+                    variation_mytime_id: String(varId),
+                    variation_employee_id: String(varEmployeeId),
+                    variation_begin_at: varBegin,
+                    variation_end_at: varEnd,
+                    price: varPrice
+                };
+
+                // Add parent_id for add-ons (index > 0 means it's after the primary service)
+                if (index > 0) {
+                    variation.parent_id = String(primaryVariationId);
+                    console.log(`[direct_booking] Add-on: ${getVarName(varId)} (${varDuration}min) -> parent: ${getVarName(primaryVariationId)}`);
+                }
+
+                return variation;
+            });
+        } else if (variationId) {
+            // Single variation (legacy/non-spa)
+            const varInfo = getVariationInfo(variationId);
+            const varPrice = varInfo?.price ?? 0;
+            console.log(`[direct_booking] Single service: ${getVarName(variationId)} ($${varPrice})`);
+            const finalEmployeeId = employeeId || RESOURCE_MAP[variationId] || EMPLOYEE_IDS.spaServices;
+
+            // Single service logic - need to calculate end_at?
+            // Existing logic uses endAt request param which is 24h for Boarding.
+            // If we want consistent validation, we should ALSO re-calculate strict API end for single service.
+
+            // Re-calculate strict end for single service too
+            const apiDur = getApiDuration(variationId);
+            const strictEndAt = new Date(new Date(beginAt).getTime() + apiDur * 60 * 1000).toISOString().replace('.000Z', 'Z');
+            console.log(`[direct_booking] Single Service API Duration: ${apiDur}min, End: ${strictEndAt}`);
+
+            variationsArray = [{
+                variation_mytime_id: String(variationId),
+                variation_employee_id: String(finalEmployeeId),
+                variation_begin_at: beginAt,
+                variation_end_at: strictEndAt, // Use strict end for variation too? No keep original endAt? 
+                // Wait, if validation checks "end_at must be latest end_at of non-buffer segments",
+                // then variation_end_at must match end_at.
+                // Let's us strictEndAt for both.
+                price: varPrice
+            }];
+
+            // NOTE: Overwriting `endAt` usage below -> Use appointmentEndAt instead
+            // endAt = strictEndAt; 
+            appointmentEndAt = strictEndAt;
+        } else {
+            return res.status(400).json({ error: 'Missing variations' });
+        }
+
+        // ...
+
+        // Use the strict API end time
+        // Determine primary ...
+        const primaryEmployeeId = variationsArray[0]?.variation_employee_id || EMPLOYEE_IDS.spaServices;
+
+        // Use the last variation's end_at directly to ensure exact format match
+        const latestEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
+
+        // Log calculated appointment times because it's confusing
+        const calcBegin = new Date(beginAt);
+        const calcEnd = new Date(latestEndAt);
+        const calcDurationMin = Math.round((calcEnd.getTime() - calcBegin.getTime()) / 60000);
+        console.log(`[direct_booking] Calculated appointment (Real): ${beginAt} to ${latestEndAt} (${calcDurationMin}min)`);
+
+        // UNIFIED DURATION & END TIME LOGIC
+        // This overrides any previous calculations to ensure specific business rules are met
+
+        // 1. Identify Service Type (Boarding vs Spa/Other)
+        const primaryVarIdRaw = variationsArray[0]?.variation_mytime_id;
+        const primaryInfo = getVariationInfo(primaryVarIdRaw);
+        const isBoarding = primaryInfo?.service_name === 'Boarding' || primaryInfo?.name?.toLowerCase().includes('boarding');
+
+        if (isBoarding) {
+            // Rule: Boarding uses ALIGNED times for API validation (same time of day)
+            // Multi-day stays = N × 24h duration. 12PM checkout is handled operationally by staff.
+
+            // Get the intended checkout date from the request endAt
+            const checkoutDate = endAt ? new Date(endAt) : new Date(new Date(beginAt).getTime() + 24 * 60 * 60 * 1000);
+            const beginDate = new Date(beginAt);
+
+            // Align check-out to same clock time as check-in for API validation
+            // We use the requested date but force the HOUR/MIN to match beginAt
+            const alignedCheckout = new Date(checkoutDate);
+            alignedCheckout.setUTCHours(beginDate.getUTCHours(), beginDate.getUTCMinutes(), 0, 0);
+
+            appointmentEndAt = alignedCheckout.toISOString().replace('.000Z', 'Z');
+
+            const nights = Math.max(1, Math.round((alignedCheckout.getTime() - beginDate.getTime()) / (24 * 60 * 60 * 1000)));
+            console.log(`[direct_booking] Boarding: ${nights} night stay -> ${appointmentEndAt}`);
+
+            // For boarding, we use ONE variation spanning the whole stay
+            // WARNING: MyTime configuration MUST match the stay duration (e.g. 24h per night)
+            if (variationsArray.length > 0) {
+                variationsArray[0].variation_end_at = appointmentEndAt;
+                console.log(`[direct_booking] Variation end synced to: ${appointmentEndAt}`);
+            }
+
+            console.log(`[direct_booking] Note: Actual checkout at 12PM is handled operationally by staff.`);
+        } else {
+            // Rule: Spa/Other uses Strict API Duration (sum of non-add-ons)
+            let apiSum = 0;
+            variationsArray.forEach(v => {
+                const info = getVariationInfo(v.variation_mytime_id);
+                if (!info?.add_on) apiSum += getApiDuration(v.variation_mytime_id);
+            });
+
+            if (apiSum === 0) apiSum = 15;
+
+            appointmentEndAt = new Date(new Date(beginAt).getTime() + apiSum * 60 * 1000).toISOString().replace('.000Z', 'Z');
+            console.log(`[direct_booking] Standard Service: Using Strict API Duration (${apiSum}min) -> ${appointmentEndAt}`);
         }
 
         const appointmentData: any = {
-            location_mytime_id: parseInt(LOCATION_ID),
-            employee_mytime_id: parseInt(finalEmployeeId),
-            variations: [{
-                variation_id: parseInt(variationId)
-            }],
+            location_mytime_id: LOCATION_ID,
+            employee_mytime_id: String(primaryEmployeeId),
+            client_mytime_id: clientId ? String(clientId) : undefined,
+            child_mytime_id: dogId ? String(dogId) : undefined,
             begin_at: beginAt,
-            end_at: endAt,
-            child_id: dogId ? parseInt(dogId) : undefined,
+            end_at: appointmentEndAt, // Use Strict API End
             is_existing_customer: true,
-            send_notifications: false
+            variations: variationsArray,
+            notes: [{
+                content: 'Appointment scheduled with Quicker Checker Inner app.'
+            }]
         };
 
-        // Only include client_mytime_id if provided
-        if (clientId) {
-            appointmentData.client_mytime_id = parseInt(clientId);
-        }
+        // Log final service list with names
+        const finalServices = variationsArray.map((v: any) => getVarName(v.variation_mytime_id)).join(' + ');
+        console.log(`[direct_booking] Final booking: ${finalServices}`);
+        console.log('[direct_booking] Sending:', JSON.stringify(appointmentData, null, 2));
 
         const result = await partnerApiRequest('POST', '/appointments', appointmentData);
+
+        // Check in the client after successful booking
+        const appointmentId = result.appointment?.mytime_id || result.appointment?.id;
+        if (appointmentId) {
+            try {
+                await partnerApiRequest('PUT', `/appointments/${appointmentId}/client_checked_in`, {});
+                console.log(`[direct_booking] Client checked in for appointment ${appointmentId}`);
+            } catch (checkInError: any) {
+                console.error(`[direct_booking] Check-in failed (appointment created):`, checkInError.message);
+                // Don't fail the whole request if check-in fails - appointment was still created
+            }
+        }
 
         res.json({
             success: true,
@@ -818,9 +1174,12 @@ app.get('/api/health', (req: Request, res: Response) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🐕 Quicker Checker server running on http://localhost:${PORT}`);
     console.log(`   MyTime API: ${MYTIME_BASE_URL}`);
     console.log(`   Company ID: ${COMPANY_ID}`);
     console.log(`   Location ID: ${LOCATION_ID}`);
+
+    // Load variation cache at startup
+    await loadVariationsCache();
 });

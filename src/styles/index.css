@@ -48,6 +48,13 @@ body {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
+.card-focused {
+  outline: 3px solid var(--secondary-color);
+  outline-offset: 2px;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 0 0 4px rgba(185, 213, 50, 0.3);
+}
+
 h1,
 h2,
 h3 {
@@ -371,6 +378,9 @@ input[type="file"] {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -380,6 +390,46 @@ input[type="file"] {
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
+}
+
+/* Dog Info in Modal */
+#selected-dog-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.selected-dog-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: white;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.selected-dog-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.selected-dog-details h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--primary-color);
+}
+
+.selected-dog-details p {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
 }
 
 /* MultiSelect */
@@ -1014,16 +1064,34 @@ input[type="file"] {
   align-items: center;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
 .header-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 1rem;
   align-items: center;
+}
+
+.user-name {
+  color: white;
+  font-weight: 500;
 }
 
 .logout-btn {
   font-size: 0.875rem;
   padding: 0.5rem 1rem;
   height: auto;
+  background: var(--secondary-color);
+  color: var(--text-main);
+  border: none;
+}
+
+.logout-btn:hover {
+  background: #a8c22e;
 }
 
 .syncing-badge {
@@ -1032,6 +1100,17 @@ input[type="file"] {
   background: #e2e8f0;
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
+}
+
+/* Gender-specific badge colors */
+.gender-badge-male {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.gender-badge-female {
+  background: #fce7f3;
+  color: #9d174d;
 }
 
 .offline-badge {
@@ -1419,6 +1498,7 @@ input[type="file"] {
 #main-screen.active {
   display: flex;
   flex-direction: column;
+  padding: 1rem 1.5rem;
 }
 
 /* Date Picker Theming */
@@ -1482,4 +1562,215 @@ input[type="file"] {
 
 .date-input:hover {
   background: #e2e8f0;
+}
+
+/* Time Picker Theming (for Spa services) */
+.time-picker-section {
+  margin-top: 1rem;
+}
+
+.time-input-wrapper {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.time-input-wrapper:active {
+  transform: scale(0.99);
+}
+
+.time-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  padding-right: 2.5rem;
+  background: #f1f5f9;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  font-size: 1rem;
+  height: 3.5rem;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.time-input-icon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.25rem;
+  pointer-events: none;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.time-input:focus {
+  border-color: var(--primary-color);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(0, 88, 124, 0.1);
+}
+
+.time-input:hover {
+  background: #e2e8f0;
+}
+
+/* Hide native time picker icon for consistent styling */
+.time-input::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Flatpickr Custom Theme */
+.flatpickr-calendar {
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border-color);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.flatpickr-day:hover {
+  background: #e2e8f0;
+}
+
+.flatpickr-months .flatpickr-month {
+  background: var(--primary-color);
+  color: white;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year {
+  color: white;
+}
+
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+  fill: white;
+}
+
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+  fill: var(--secondary-color);
+}
+
+.flatpickr-weekdays {
+  background: var(--primary-color);
+}
+
+.flatpickr-weekday {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.flatpickr-day.today {
+  border-color: var(--secondary-color);
+}
+
+.flatpickr-day.today:hover {
+  background: var(--secondary-color);
+  border-color: var(--secondary-color);
+  color: var(--text-main);
+}
+
+/* Spa Services Section */
+.spa-services-section {
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.spa-primary-services,
+.spa-addons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spa-section-label {
+  font-weight: 600;
+  color: var(--text-main);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.spa-radio-group,
+.spa-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spa-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s;
+}
+
+.spa-option:hover {
+  background-color: var(--bg-main);
+}
+
+.spa-option input[type="radio"],
+.spa-option input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.spa-option-label {
+  font-size: 1rem;
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.spa-bundle-note {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  color: #166534;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
