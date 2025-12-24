@@ -76,6 +76,8 @@ const ADD_ON_VARIATION_IDS: Set<string> = new Set([
 interface VariationInfo {
     id: string;
     name: string;
+    service_name: string;
+    externalId: string;
     duration: number;  // in minutes
     add_on: boolean;
     price: number;
@@ -155,27 +157,25 @@ async function mytimeRequest(method: string, endpoint: string, data: any = null,
 
 // Helper to make Partner API requests (for location-wide access to clients/pets)
 // Uses X-Api-Key header and partners-api.mytime.com host
-async function partnerApiRequest(method: string, endpoint: string, dataOrParams: any = null): Promise<any> {
+async function partnerApiRequest(method: string, endpoint: string, data: any = null, params: any = null): Promise<any> {
     const url = `https://partners-api.mytime.com/api${endpoint}`;
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Api-Key': MYTIME_API_KEY || ''
+        'X-Api-Key': MYTIME_API_KEY || '',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Origin': 'https://partners-api.mytime.com',
+        'Referer': 'https://partners-api.mytime.com/'
     };
 
     try {
         const config: any = {
             method,
             url,
-            headers
+            headers,
+            data,
+            params
         };
-
-        // For POST/PUT, send as body data; for GET, send as query params
-        if (method.toUpperCase() === 'GET') {
-            config.params = dataOrParams;
-        } else {
-            config.data = dataOrParams;
-        }
 
         const response = await axios(config);
         return response.data;
@@ -197,8 +197,8 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
             return; // Already loaded and not forcing refresh
         }
 
-        const result = await partnerApiRequest('GET', '/variations', {
-            location_mytime_id: LOCATION_ID
+        const result = await partnerApiRequest('GET', '/variations', null, {
+            location_mytime_id: parseInt(LOCATION_ID)
         });
 
         const variations = result.variations || [];
@@ -209,6 +209,8 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
             const info: VariationInfo = {
                 id,
                 name: v.name || 'Unknown',
+                service_name: v.service_name || 'Unknown',
+                externalId: v.external_id || id,
                 duration: v.duration || 0,
                 add_on: v.add_on || false,
                 price: v.pricings?.[0]?.existing_list_price || v.price || 0
@@ -712,153 +714,16 @@ app.get('/api/open-times', async (req: Request, res: Response) => {
     }
 });
 
-// Create a new cart
-app.post('/api/cart', async (req: Request, res: Response) => {
-    try {
-        const authToken = req.headers.authorization;
-        const { userId } = req.body;
-
-        const result = await mytimeRequest('POST', '/carts', {
-            user_id: userId || null
-        }, authToken);
-
-        res.json({
-            success: true,
-            cart: result.cart
-        });
-    } catch (error: any) {
-        res.status(error.response?.status || 500).json({
-            success: false,
-            error: error.response?.data?.errors || 'Failed to create cart'
-        });
-    }
-});
-
-// Add item to cart
-app.post('/api/cart/:cartId/items', async (req: Request, res: Response) => {
-    try {
-        const authToken = req.headers.authorization;
-        const { cartId } = req.params;
-        const { dogId, beginAt, endAt, dealId, variationId, employeeIds } = req.body;
-
-        // Resource Mapping (Boarding ID: 295288, Evaluation ID: 295290)
-        // User requested: Daycare -> Daycare Employee, Boarding -> Boarding Employee
-        // Since "Daycare" employee is missing from list, we fallback to Boarding or generic logic
-        // For now, we map Daycare variations to Boarding ID as it's the only generic "room" type available
-        const RESOURCE_MAP = {
-            '91629241': '295287', // Weekday Daycare -> Daycare Staff
-            '92628859': '295287', // Sat Daycare -> Daycare Staff
-            '111325854': '295287', // Sun Daycare -> Daycare Staff
-            '91420537': '295290', // Evaluation -> Evaluation Staff
-            '99860007': '295289'  // Bath (Grooming) -> Spa Services Staff
-        };
-
-        let targetEmployeeIds = employeeIds || '';
-
-        // Auto-assign resource if not provided
-        if (!targetEmployeeIds && variationId && (RESOURCE_MAP as Record<string, string>)[String(variationId)]) {
-            targetEmployeeIds = (RESOURCE_MAP as Record<string, string>)[String(variationId)];
-            console.log(`[cart] Auto-assigned resource ${targetEmployeeIds} for variation ${variationId}`);
-        }
-
-        // Get the correct variation based on the booking date
-        // Parse date as local time to get correct day of week
-        let bookingDate = new Date();
-        if (beginAt) {
-            const dateStr = beginAt.split('T')[0]; // Extract date portion
-            const [year, month, day] = dateStr.split('-').map(Number);
-            bookingDate = new Date(year, month - 1, day); // month is 0-indexed
-        }
-
-        const result = await mytimeRequest('POST', `/carts/${cartId}/cart_items`, {
-            location_id: LOCATION_ID ? parseInt(LOCATION_ID) : undefined,
-            variation_ids: String(variationId || getDaycareVariationId(bookingDate)),
-            deal_id: dealId ? parseInt(dealId) : null,
-            employee_ids: targetEmployeeIds || '',
-            begin_at: beginAt,
-            end_at: endAt,
-            is_existing_customer: true,
-            travel_to_customer: false,
-            has_specific_employee: !!targetEmployeeIds,
-            child_id: dogId ? String(dogId) : null
-        }, authToken);
-
-        res.json({
-            success: true,
-            cartItem: result.cart_item,
-            cart: result.cart
-        });
-    } catch (error: any) {
-        res.status(error.response?.status || 500).json({
-            success: false,
-            error: error.response?.data?.errors || 'Failed to add cart item'
-        });
-    }
-});
-
-// Update cart (assign to user)
-app.put('/api/cart/:cartId', async (req: Request, res: Response) => {
-    try {
-        const authToken = req.headers.authorization;
-        const { cartId } = req.params;
-        const { userId } = req.body;
-
-        const result = await mytimeRequest('PUT', `/carts/${cartId}`, {
-            user_id: userId
-        }, authToken);
-
-        res.json({
-            success: true,
-            cart: result.cart
-        });
-    } catch (error: any) {
-        res.status(error.response?.status || 500).json({
-            success: false,
-            error: error.response?.data?.errors || 'Failed to update cart'
-        });
-    }
-});
-
-// Create purchase (complete booking)
-app.post('/api/purchase', async (req: Request, res: Response) => {
-    try {
-        const authToken = req.headers.authorization;
-        const { cartId, dogId } = req.body;
-
-        const result = await mytimeRequest('POST', '/purchases', {
-            note: 'Appointment scheduled with Quicker Checker Inner app.',
-            referrer: 'express_checkout',
-            cart_id: cartId,
-            is_embedded: true,
-            no_pay: true,
-            is_mobile_consumer_app: false,
-            child_id: dogId ? parseInt(dogId) : null
-        }, authToken);
-
-        res.json({
-            success: true,
-            purchase: result.purchase
-        });
-    } catch (error: any) {
-        console.error('Create purchase error:', error.response?.data || error.message);
-        res.status(error.response?.status || 500).json({
-            success: false,
-            error: error.response?.data?.errors || error.response?.data || 'Failed to create purchase'
-        });
-    }
-});
-
 // Direct booking bypass using Partners API (to bypass "bookable: false" restriction)
 app.post('/api/appointments/direct', async (req: Request, res: Response) => {
     try {
         // Ensure variation cache is fresh before booking
         await loadVariationsCache(true);
 
-        const { dogId, variationId, variations, beginAt, endAt, employeeId, clientId, notes } = req.body;
+        const { dogId, variationId, variations, beginAt, endAt, employeeId, clientId } = req.body;
 
         // Build variations array - either from provided array or from single variationId
         let variationsArray: any[] = [];
-        let customEndAt: string | undefined;
 
         // Helper to get variation name for logging
         const getVarName = (id: string) => VARIATION_NAMES[id] || `Unknown(${id})`;
@@ -920,6 +785,7 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
 
                 const variation: any = {
                     variation_mytime_id: String(varId),
+                    variation_partner_id: varInfo?.externalId || String(varId),
                     variation_employee_id: String(varEmployeeId),
                     variation_begin_at: varBegin,
                     variation_end_at: varEnd,
@@ -941,66 +807,40 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
             console.log(`[direct_booking] Single service: ${getVarName(variationId)} ($${varPrice})`);
             const finalEmployeeId = employeeId || RESOURCE_MAP[variationId] || EMPLOYEE_IDS.spaServices;
 
-            // Single service logic - need to calculate end_at?
-            // Existing logic uses endAt request param which is 24h for Boarding.
-            // If we want consistent validation, we should ALSO re-calculate strict API end for single service.
-
-            // Re-calculate strict end for single service too
-            const apiDur = getApiDuration(variationId);
+            // Re-calculate strict end for single service
+            const apiDur = getApiDuration(variationId) || 15;
             const strictEndAt = new Date(new Date(beginAt).getTime() + apiDur * 60 * 1000).toISOString().replace('.000Z', 'Z');
             console.log(`[direct_booking] Single Service API Duration: ${apiDur}min, End: ${strictEndAt}`);
 
             variationsArray = [{
                 variation_mytime_id: String(variationId),
+                variation_partner_id: varInfo?.externalId || String(variationId),
                 variation_employee_id: String(finalEmployeeId),
                 variation_begin_at: beginAt,
-                variation_end_at: strictEndAt, // Use strict end for variation too? No keep original endAt? 
-                // Wait, if validation checks "end_at must be latest end_at of non-buffer segments",
-                // then variation_end_at must match end_at.
-                // Let's us strictEndAt for both.
+                variation_end_at: strictEndAt,
                 price: varPrice
             }];
 
-            // NOTE: Overwriting `endAt` usage below -> Use appointmentEndAt instead
-            // endAt = strictEndAt; 
             appointmentEndAt = strictEndAt;
         } else {
             return res.status(400).json({ error: 'Missing variations' });
         }
 
-        // ...
-
-        // Use the strict API end time
-        // Determine primary ...
+        // Determine primary employee
         const primaryEmployeeId = variationsArray[0]?.variation_employee_id || EMPLOYEE_IDS.spaServices;
 
-        // Use the last variation's end_at directly to ensure exact format match
-        const latestEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
-
-        // Log calculated appointment times because it's confusing
-        const calcBegin = new Date(beginAt);
-        const calcEnd = new Date(latestEndAt);
-        const calcDurationMin = Math.round((calcEnd.getTime() - calcBegin.getTime()) / 60000);
-        console.log(`[direct_booking] Calculated appointment (Real): ${beginAt} to ${latestEndAt} (${calcDurationMin}min)`);
-
         // UNIFIED DURATION & END TIME LOGIC
-        // This overrides any previous calculations to ensure specific business rules are met
-
-        // 1. Identify Service Type (Boarding vs Spa/Other)
         const primaryVarIdRaw = variationsArray[0]?.variation_mytime_id;
         const primaryInfo = getVariationInfo(primaryVarIdRaw);
-        const isBoarding = primaryInfo?.service_name === 'Boarding' || primaryInfo?.name?.toLowerCase().includes('boarding');
+        const primaryVarName = primaryInfo?.name || VARIATION_NAMES[primaryVarIdRaw] || '';
+        const isBoarding = primaryInfo?.service_name === 'Boarding' || primaryVarName.toLowerCase().includes('boarding');
 
         if (isBoarding) {
-            // Rule: Boarding uses ALIGNED times for API validation (same time of day)
-            // Multi-day stays = N × 24h duration. 12PM checkout is handled operationally by staff.
-
-            // Get the intended checkout date from the request endAt
+            // Get the intended checkout date from the request endAt or fallback to 1 night
             const checkoutDate = endAt ? new Date(endAt) : new Date(new Date(beginAt).getTime() + 24 * 60 * 60 * 1000);
             const beginDate = new Date(beginAt);
 
             // Align check-out to same clock time as check-in for API validation
-            // We use the requested date but force the HOUR/MIN to match beginAt
             const alignedCheckout = new Date(checkoutDate);
             alignedCheckout.setUTCHours(beginDate.getUTCHours(), beginDate.getUTCMinutes(), 0, 0);
 
@@ -1010,47 +850,36 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
             console.log(`[direct_booking] Boarding: ${nights} night stay -> ${appointmentEndAt}`);
 
             // For boarding, we use ONE variation spanning the whole stay
-            // WARNING: MyTime configuration MUST match the stay duration (e.g. 24h per night)
             if (variationsArray.length > 0) {
                 variationsArray[0].variation_end_at = appointmentEndAt;
                 console.log(`[direct_booking] Variation end synced to: ${appointmentEndAt}`);
             }
-
-            console.log(`[direct_booking] Note: Actual checkout at 12PM is handled operationally by staff.`);
-        } else {
-            // Rule: Spa/Other uses Strict API Duration (sum of non-add-ons)
-            let apiSum = 0;
-            variationsArray.forEach(v => {
-                const info = getVariationInfo(v.variation_mytime_id);
-                if (!info?.add_on) apiSum += getApiDuration(v.variation_mytime_id);
-            });
-
-            if (apiSum === 0) apiSum = 15;
-
-            appointmentEndAt = new Date(new Date(beginAt).getTime() + apiSum * 60 * 1000).toISOString().replace('.000Z', 'Z');
-            console.log(`[direct_booking] Standard Service: Using Strict API Duration (${apiSum}min) -> ${appointmentEndAt}`);
         }
 
-        const appointmentData: any = {
-            location_mytime_id: LOCATION_ID,
-            employee_mytime_id: String(primaryEmployeeId),
-            client_mytime_id: clientId ? String(clientId) : undefined,
-            child_mytime_id: dogId ? String(dogId) : undefined,
+        // Separated params and body based on Partner API schema
+        const queryParams: any = {
+            location_mytime_id: parseInt(LOCATION_ID),
+            employee_mytime_id: parseInt(primaryEmployeeId),
+            client_mytime_id: clientId ? parseInt(clientId) : undefined,
+            child_mytime_id: dogId ? parseInt(dogId) : undefined,
             begin_at: beginAt,
-            end_at: appointmentEndAt, // Use Strict API End
-            is_existing_customer: true,
-            variations: variationsArray,
-            notes: [{
-                content: 'Appointment scheduled with Quicker Checker Inner app.'
-            }]
+            end_at: appointmentEndAt
         };
 
-        // Log final service list with names
-        const finalServices = variationsArray.map((v: any) => getVarName(v.variation_mytime_id)).join(' + ');
-        console.log(`[direct_booking] Final booking: ${finalServices}`);
-        console.log('[direct_booking] Sending:', JSON.stringify(appointmentData, null, 2));
+        const bodyData: any = {
+            appointment: {
+                variations: variationsArray,
+                notes: [{
+                    content: 'Appointment scheduled with Quicker Checker Inner app.'
+                }]
+            }
+        };
 
-        const result = await partnerApiRequest('POST', '/appointments', appointmentData);
+        console.log(`[direct_booking] Final Sending (POST /appointments):`);
+        console.log(`[direct_booking] Query Params:`, JSON.stringify(queryParams, null, 2));
+        console.log(`[direct_booking] Body Data:`, JSON.stringify(bodyData, null, 2));
+
+        const result = await partnerApiRequest('POST', '/appointments', bodyData, queryParams);
 
         // Check in the client after successful booking
         const appointmentId = result.appointment?.mytime_id || result.appointment?.id;
@@ -1059,8 +888,7 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
                 await partnerApiRequest('PUT', `/appointments/${appointmentId}/client_checked_in`, {});
                 console.log(`[direct_booking] Client checked in for appointment ${appointmentId}`);
             } catch (checkInError: any) {
-                console.error(`[direct_booking] Check-in failed (appointment created):`, checkInError.message);
-                // Don't fail the whole request if check-in fails - appointment was still created
+                console.error(`[direct_booking] Check-in failed (appointment created):`, (checkInError as Error).message);
             }
         }
 
@@ -1128,7 +956,6 @@ app.get('/api/debug/employees', async (req: Request, res: Response) => {
 app.get('/api/debug/verify-config', async (req: Request, res: Response) => {
     try {
         console.log('Running diagnostic check...');
-        // The Partner API /locations endpoint doesn't require a company_id
         const result = await partnerApiRequest('GET', '/locations');
         const locations: any[] = result.locations || result.clients || [];
 

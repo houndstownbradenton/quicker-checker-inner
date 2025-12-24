@@ -1,0 +1,161 @@
+{
+  "summary": "Create an appointment",
+  "description": "Returns the newly created appointment",
+  "produces": [
+    "application/json"
+  ],
+  "tags": [
+    "Appointment"
+  ],
+  "parameters": [
+    {
+      "$ref": "#/parameters/Subdomain"
+    },
+    {
+      "name": "appointment",
+      "in": "body",
+      "description": "The appointment details",
+      "required": true,
+      "schema": {
+        "$ref": "#/definitions/AppointmentPostBody"
+      }
+    },
+    {
+      "name": "partner_id",
+      "in": "query",
+      "description": "The appointments's id",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "client_partner_id",
+      "in": "query",
+      "description": "The client's id",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "client_mytime_id",
+      "in": "query",
+      "description": "The client's mytime id",
+      "required": false,
+      "type": "integer"
+    },
+    {
+      "name": "child_partner_id",
+      "in": "query",
+      "description": "The child's id",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "child_mytime_id",
+      "in": "query",
+      "description": "The child's mytime id",
+      "required": false,
+      "type": "integer"
+    },
+    {
+      "name": "location_partner_id",
+      "in": "query",
+      "description": "The location's id",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "location_mytime_id",
+      "in": "query",
+      "description": "The location's mytime id",
+      "required": false,
+      "type": "integer"
+    },
+    {
+      "name": "employee_partner_id",
+      "in": "query",
+      "description": "The employee's id",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "employee_mytime_id",
+      "in": "query",
+      "description": "The employee's mytime id",
+      "required": false,
+      "type": "integer"
+    },
+    {
+      "name": "begin_at",
+      "in": "query",
+      "description": "The appointment's start time. e.g 2017-10-17T10:00:00Z",
+      "required": true,
+      "type": "string"
+    },
+    {
+      "name": "end_at",
+      "in": "query",
+      "description": "The appointment's end time. e.g 2017-10-17T12:00:00Z",
+      "required": true,
+      "type": "string"
+    },
+    {
+      "name": "referrer",
+      "in": "query",
+      "description": "Referrer for appointment",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "address_id",
+      "in": "query",
+      "description": "Client address ID",
+      "required": false,
+      "type": "string"
+    },
+    {
+      "name": "employee_requested",
+      "in": "query",
+      "description": "Whether an employee was requested",
+      "required": false,
+      "type": "boolean"
+    },
+    {
+      "name": "check_conflicts",
+      "in": "query",
+      "description": "Whether to check for appointment conflicts or not",
+      "required": false,
+      "type": "boolean"
+    }
+  ],
+  "responses": {
+    "200": {
+      "description": "Appointment response",
+      "schema": {
+        "$ref": "#/definitions/Appointment"
+      }
+    },
+    "401": {
+      "description": "Unauthorized",
+      "schema": {
+        "$ref": "#/definitions/ErrorModel"
+      }
+    },
+    "422": {
+      "description": "Invalid parameters",
+      "schema": {
+        "$ref": "#/definitions/ErrorModel"
+      }
+    },
+    "500": {
+      "description": "Internal Server Error",
+      "schema": {
+        "$ref": "#/definitions/ErrorModel"
+      }
+    },
+    "504": {
+      "description": "Gateway Timeout",
+      "schema": {
+        "$ref": "#/definitions/ErrorModel"
+      }
+    }
+  }
+}
