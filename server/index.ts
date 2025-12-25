@@ -194,27 +194,69 @@ async function mytimeRequest(method: string, endpoint: string, data: any = null,
     }
 }
 
-// Helper to make Partner API requests (for location-wide access to clients/pets)
-// Uses X-Api-Key header and partners-api.mytime.com host
+// ============================================================================
+// PARTNER API REQUEST HELPER
+// ============================================================================
+// Makes requests to the MyTime Partner API (partners-api.mytime.com).
+// Used for location-wide access to clients, pets, and appointment management.
+//
+// CLOUDFRONT WAF COMPATIBILITY:
+// The MyTime Partner API uses CloudFront CDN with WAF (Web Application Firewall).
+// Several request patterns trigger 403 "Bad request" errors:
+//
+// 1. HEADERS: Extra headers like User-Agent, Origin, Referer trigger blocks.
+//    FIX: Use minimal headers - only X-Api-Key (and Content-Type for POST/PUT).
+//
+// 2. ARRAY PARAMETERS: Default axios serialization uses bracket notation
+//    (e.g., location_mytime_ids[0]=158078) which CloudFront WAF blocks.
+//    FIX: Custom paramsSerializer uses repeated keys (location_mytime_ids=158078).
+//
+// 3. GET WITH BODY: Passing data in request body for GET requests fails.
+//    FIX: Use params (4th arg) for query parameters, not data (3rd arg).
+// ============================================================================
 async function partnerApiRequest(method: string, endpoint: string, data: any = null, params: any = null): Promise<any> {
     const url = `https://partners-api.mytime.com/api${endpoint}`;
-    const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-Api-Key': MYTIME_API_KEY || '',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Origin': 'https://partners-api.mytime.com',
-        'Referer': 'https://partners-api.mytime.com/'
+
+    // Minimal headers to avoid CloudFront WAF blocks
+    // The working /variations call at startup only uses X-Api-Key
+    const headers: Record<string, string> = {
+        'X-Api-Key': MYTIME_API_KEY || ''
     };
+
+    // Only add Content-Type for POST/PUT requests with body data
+    if (data && (method === 'POST' || method === 'PUT')) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     try {
         const config: any = {
             method,
             url,
             headers,
-            data,
-            params
+            params,
+            // Custom serializer to handle arrays without brackets (e.g., key=val1&key=val2)
+            // CloudFront WAF blocks the default bracket notation (key[0]=val1)
+            paramsSerializer: (p: any) => {
+                const parts: string[] = [];
+                for (const key of Object.keys(p)) {
+                    const value = p[key];
+                    if (Array.isArray(value)) {
+                        // Serialize arrays as repeated keys: location_mytime_ids=158078
+                        for (const v of value) {
+                            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
+                        }
+                    } else if (value !== null && value !== undefined) {
+                        parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                    }
+                }
+                return parts.join('&');
+            }
         };
+
+        // Add data for POST/PUT requests
+        if (data) {
+            config.data = data;
+        }
 
         const response = await axios(config);
         return response.data;
@@ -226,6 +268,7 @@ async function partnerApiRequest(method: string, endpoint: string, data: any = n
         throw error;
     }
 }
+
 
 // Load and cache all variations from Partner API
 async function loadVariationsCache(force: boolean = false): Promise<void> {
@@ -611,11 +654,9 @@ app.get('/api/dogs/search', async (req: Request, res: Response) => {
         // Get clients at this location with their children
         // Note: We don't use the search parameter because it only searches client names, not pet names
         // We filter locally to support searching by pet name
-        const clientsResult = await partnerApiRequest('GET', '/clients', {
-            include_children: true,
-            location_mytime_ids: LOCATION_ID ? [parseInt(LOCATION_ID)] : [],
-            per_page: 20
-        });
+        // Using location_mytime_ids[] bracket notation (PHP-style) as used by dog-relationship-tracker
+        const searchQueryString = `include_children=true&location_mytime_ids[]=${LOCATION_ID}&per_page=20`;
+        const clientsResult = await partnerApiRequest('GET', `/clients?${searchQueryString}`, null, null);
 
         const clients = clientsResult.clients || [];
         for (const client of clients) {
@@ -635,7 +676,7 @@ app.get('/api/dogs/search', async (req: Request, res: Response) => {
 
         // Also try /children endpoint with search for pet name search
         try {
-            const childrenResult = await partnerApiRequest('GET', '/children', {
+            const childrenResult = await partnerApiRequest('GET', '/children', null, {
                 search: query,
                 per_page: 20
             });
@@ -704,18 +745,25 @@ app.get('/api/dogs/sync', async (req, res) => {
         console.log(`Sync request: page ${page}, per_page ${perPage}`);
 
         // Get clients at this location with their children
-        const clientsResult = await partnerApiRequest('GET', '/clients', {
-            include_children: true,
-            location_mytime_ids: [parseInt(LOCATION_ID)],
-            page: page,
-            per_page: perPage
-        });
+        // Using location_mytime_ids[] bracket notation (PHP-style) as used by dog-relationship-tracker
+        // The Partner API expects this format for array parameters
+        const queryString = `include_children=true&location_mytime_ids[]=${LOCATION_ID}&page=${page}&per_page=${perPage}`;
+        const clientsResult = await partnerApiRequest('GET', `/clients?${queryString}`, null, null);
 
         const clients = clientsResult.clients || [];
         const totalClients = clientsResult.total_count || clientsResult.count || clients.length;
-        const dogs = [];
+        const dogs: any[] = [];
+
+        // Parse location ID for comparison with client's preferred location
+        const locationIdNum = parseInt(LOCATION_ID);
 
         for (const client of clients) {
+            // Filter: Only include dogs from clients whose preferred location matches ours
+            // This prevents syncing dogs from clients who may have visited but belong to another location
+            if (client.preferred_location_mytime_id !== locationIdNum) {
+                continue;
+            }
+
             if (client.children && Array.isArray(client.children)) {
                 for (const child of client.children) {
                     dogs.push({

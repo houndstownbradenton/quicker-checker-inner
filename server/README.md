@@ -199,3 +199,52 @@ Run with:
 ```bash
 npx ts-node --esm debug/test_spa_addon.ts
 ```
+
+---
+
+## CloudFront WAF Compatibility
+
+The MyTime Partner API uses CloudFront CDN with Web Application Firewall (WAF). Several request patterns can trigger **403 "Bad request"** errors.
+
+### Known Issues & Fixes
+
+| Issue | Symptom | Fix |
+|-------|---------|-----|
+| Extra Headers | 403 error on `/clients` endpoint | Use minimal headers (only `X-Api-Key`) |
+| Array Parameters | CloudFront blocks bracket notation | Custom `paramsSerializer` uses repeated keys |
+| GET with Body | Request body in GET fails | Pass data as `params` (4th arg), not `data` (3rd arg) |
+
+### Header Requirements
+
+**Working (minimal headers):**
+```typescript
+headers: {
+    'X-Api-Key': MYTIME_API_KEY
+}
+```
+
+**Blocked (extra headers trigger WAF):**
+```typescript
+headers: {
+    'X-Api-Key': MYTIME_API_KEY,
+    'User-Agent': '...',      // ❌ Triggers WAF
+    'Origin': '...',          // ❌ Triggers WAF
+    'Referer': '...'          // ❌ Triggers WAF
+}
+```
+
+### Array Parameter Serialization
+
+The Partner API expects PHP-style bracket notation for array parameters:
+
+**Working (PHP-style brackets in URL):**
+```
+location_mytime_ids[]=158078
+```
+
+**Blocked (axios default bracket[0] notation):**
+```
+location_mytime_ids[0]=158078
+```
+
+For `/clients` endpoint calls, build the query string manually with `location_mytime_ids[]=${LOCATION_ID}` rather than passing arrays through axios params.
