@@ -1,0 +1,771 @@
+openapi: 3.0.3
+info:
+  title: Quicker Checker Inner API
+  description: |
+    API server for the Quicker Checker Inner application. 
+    Provides endpoints for dog check-in/check-out, appointment booking, 
+    and client management via the MyTime Partner API.
+    
+    ## Authentication
+    Most endpoints use the server's MyTime API key configured via environment variables.
+    The `/api/auth/login` endpoint authenticates staff users.
+    
+    ## Boarding Appointments
+    Multi-night boarding bookings require special handling. The MyTime API expects 
+    **one variation entry per night**. See the POST /api/appointments/direct endpoint 
+    for details.
+  version: 1.0.0
+  contact:
+    name: Development Team
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: Staff authentication
+  - name: Company
+    description: Company and location data
+  - name: Services
+    description: Deals, variations, and services
+  - name: Dogs
+    description: Pet/dog management and search
+  - name: Employees
+    description: Staff/employee data
+  - name: Appointments
+    description: Booking and appointment management
+  - name: Cart
+    description: Cart/checkout flow
+  - name: Debug
+    description: Debugging and health endpoints
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Staff login
+      description: Authenticate a staff member using email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  user:
+                    type: object
+                  authToken:
+                    type: string
+        '401':
+          description: Authentication failed
+
+  /api/company:
+    get:
+      tags: [Company]
+      summary: Get company data
+      description: Retrieve company information including custom fields for dog attributes
+      responses:
+        '200':
+          description: Company data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  company:
+                    type: object
+
+  /api/locations:
+    get:
+      tags: [Company]
+      summary: Get company locations
+      responses:
+        '200':
+          description: List of locations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  locations:
+                    type: array
+                    items:
+                      type: object
+
+  /api/deals:
+    get:
+      tags: [Services]
+      summary: Get deals/services
+      description: Get deals (services) for a location
+      parameters:
+        - name: locationId
+          in: query
+          schema:
+            type: string
+          description: Location ID (defaults to configured location)
+      responses:
+        '200':
+          description: List of deals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deals:
+                    type: array
+                    items:
+                      type: object
+
+  /api/deals/all:
+    get:
+      tags: [Services]
+      summary: Get all deals across company
+      responses:
+        '200':
+          description: All company deals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  deals:
+                    type: array
+
+  /api/variations:
+    get:
+      tags: [Services]
+      summary: Get service variations
+      description: |
+        Get all variations for the company. Variations have important fields
+        for booking calculations:
+        
+        - `duration`: Maximum duration (NOT per-unit for boarding!)
+        - `time_span_range`: Actual booking unit [min, max] in minutes
+        - `multiplier_enabled`: Whether multi-unit pricing applies
+      parameters:
+        - name: locationId
+          in: query
+          schema:
+            type: string
+        - name: noLocation
+          in: query
+          schema:
+            type: string
+          description: If set, omits location filter
+      responses:
+        '200':
+          description: List of variations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  variations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Variation'
+
+  /api/variations/by-employee/{employeeId}:
+    get:
+      tags: [Services]
+      summary: Get variations for an employee
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Employee variations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  variations:
+                    type: array
+
+  /api/dogs:
+    get:
+      tags: [Dogs]
+      summary: Get all dogs
+      description: Get all dogs (children) for the location from Partner API
+      responses:
+        '200':
+          description: List of dogs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  dogs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dog'
+
+  /api/dogs/search:
+    get:
+      tags: [Dogs]
+      summary: Search for dogs
+      description: Search for dogs by name with optional photo enrichment
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query (dog or owner name)
+        - name: includePhotos
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  dogs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dog'
+
+  /api/dogs/sync:
+    get:
+      tags: [Dogs]
+      summary: Sync dogs from MyTime
+      description: Synchronize dogs with photos from Supabase
+      responses:
+        '200':
+          description: Sync results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  dogs:
+                    type: array
+
+  /api/employees:
+    get:
+      tags: [Employees]
+      summary: Get employees
+      description: Get employees/staff for the location
+      responses:
+        '200':
+          description: List of employees
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  employees:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Employee'
+
+  /api/employees/partner:
+    get:
+      tags: [Employees]
+      summary: Get employees from Partner API
+      responses:
+        '200':
+          description: Partner API employee list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  employees:
+                    type: array
+
+  /api/open-times:
+    get:
+      tags: [Appointments]
+      summary: Get available booking slots
+      description: Get open time slots for a specific date and service
+      parameters:
+        - name: dogId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Dog MyTime ID
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date in YYYY-MM-DD format
+        - name: variationId
+          in: query
+          schema:
+            type: string
+          description: Service variation ID
+      responses:
+        '200':
+          description: Available time slots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  openTimes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TimeSlot'
+
+  /api/appointments/direct:
+    post:
+      tags: [Appointments]
+      summary: Book an appointment directly
+      description: |
+        Create an appointment directly via the Partner API.
+        
+        ## Boarding Appointments
+        
+        **IMPORTANT**: For multi-night boarding stays, the API requires 
+        **one variation entry per night**. A single variation spanning 
+        multiple days will fail with:
+        
+        > "end_at of appointment must be the latest end_at of all non-buffer segments"
+        
+        The server handles this automatically. Just provide:
+        - `beginAt`: Check-in date/time
+        - `endAt`: Checkout date/time
+        - `variationId`: Boarding variation ID
+        
+        The server will generate the correct per-night variation entries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectBookingRequest'
+            examples:
+              daycare:
+                summary: Daycare booking
+                value:
+                  dogId: "2467113"
+                  clientId: "17455276"
+                  variationId: "91629241"
+                  beginAt: "2026-01-06T12:00:00Z"
+                  endAt: "2026-01-06T18:00:00Z"
+              boarding:
+                summary: 3-night boarding stay
+                value:
+                  dogId: "2467113"
+                  clientId: "17455276"
+                  variationId: "91404079"
+                  beginAt: "2026-01-06T12:00:00Z"
+                  endAt: "2026-01-09T12:00:00Z"
+                  notes: "Late checkout requested"
+      responses:
+        '200':
+          description: Appointment created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  appointment:
+                    $ref: '#/components/schemas/Appointment'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/cart:
+    post:
+      tags: [Cart]
+      summary: Create a cart
+      description: Create a new cart for checkout flow
+      responses:
+        '200':
+          description: Cart created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  cart:
+                    type: object
+
+  /api/cart/{cartId}/items:
+    post:
+      tags: [Cart]
+      summary: Add items to cart
+      parameters:
+        - name: cartId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Items added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  cart:
+                    type: object
+
+  /api/cart/{cartId}:
+    put:
+      tags: [Cart]
+      summary: Update cart
+      parameters:
+        - name: cartId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Cart updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  cart:
+                    type: object
+
+  /api/purchase:
+    post:
+      tags: [Cart]
+      summary: Complete purchase
+      description: Complete a cart purchase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cartId:
+                  type: string
+      responses:
+        '200':
+          description: Purchase completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  purchase:
+                    type: object
+
+  /api/check-in/{appointmentId}:
+    put:
+      tags: [Appointments]
+      summary: Check in a dog
+      description: Mark an appointment as checked in
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Check-in successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/health:
+    get:
+      tags: [Debug]
+      summary: Health check
+      description: Check if the server is running
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/debug/employees:
+    get:
+      tags: [Debug]
+      summary: Debug employee data
+      responses:
+        '200':
+          description: Debug information
+
+  /api/debug/verify-config:
+    get:
+      tags: [Debug]
+      summary: Verify configuration
+      description: Check that configuration and API connectivity is working
+      responses:
+        '200':
+          description: Configuration status
+
+components:
+  schemas:
+    Variation:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Variation MyTime ID
+        name:
+          type: string
+        duration:
+          type: integer
+          description: Maximum duration in minutes (NOT per-unit for boarding!)
+        add_on:
+          type: boolean
+          description: Whether this is an add-on requiring a parent service
+        multiplier_enabled:
+          type: boolean
+          description: Whether multi-unit bookings multiply the price
+        time_span_range:
+          type: array
+          items:
+            type: integer
+          description: "[min, max] span in minutes for ONE booking unit"
+        deal_id:
+          type: integer
+        price_varies:
+          type: boolean
+
+    Dog:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Dog MyTime ID
+        mytime_id:
+          type: integer
+        name:
+          type: string
+        breed:
+          type: string
+        client_id:
+          type: integer
+          description: Owner's client ID
+        client_name:
+          type: string
+        photo_url:
+          type: string
+          format: uri
+          description: Photo URL from Supabase (if available)
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        mytime_id:
+          type: integer
+        name:
+          type: string
+        active:
+          type: boolean
+
+    TimeSlot:
+      type: object
+      properties:
+        begin_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        deal_id:
+          type: integer
+        location_id:
+          type: integer
+        employee_id:
+          type: integer
+        min_price:
+          type: number
+        list_price:
+          type: number
+
+    DirectBookingRequest:
+      type: object
+      required:
+        - dogId
+        - beginAt
+      properties:
+        dogId:
+          type: string
+          description: Dog MyTime ID
+        clientId:
+          type: string
+          description: Client MyTime ID
+        variationId:
+          type: string
+          description: Single variation ID (for simple bookings)
+        variations:
+          type: array
+          description: Array of variations (for complex bookings like spa combos)
+          items:
+            type: object
+            properties:
+              variationId:
+                type: string
+              employeeId:
+                type: string
+        beginAt:
+          type: string
+          format: date-time
+          description: Appointment start time (check-in for boarding)
+        endAt:
+          type: string
+          format: date-time
+          description: Appointment end time (checkout for boarding)
+        employeeId:
+          type: string
+          description: Override default employee
+        notes:
+          type: string
+          description: Appointment notes
+
+    Appointment:
+      type: object
+      properties:
+        mytime_id:
+          type: integer
+        begin_at:
+          type: string
+          format: date-time
+        end_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [booked, checked_in, completed, cancelled]
+        purchased_at_price:
+          type: number
+        client_name:
+          type: string
+        client_email:
+          type: string
+          format: email
+        variation_name:
+          type: string
+        variations:
+          type: array
+          items:
+            type: object
+            properties:
+              price:
+                type: number
+              variation_mytime_id:
+                type: integer
+              segments:
+                type: array
+                items:
+                  type: object
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          oneOf:
+            - type: string
+            - type: object
+              properties:
+                general:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      message:
+                        type: string

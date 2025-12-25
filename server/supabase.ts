@@ -2,23 +2,14 @@
  * Supabase client for fetching pet photos
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { config } from './env.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Get Supabase configuration from validated env config
+const SUPABASE_URL = config.SUPABASE_URL;
+const SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY;
 
-// Load environment variables from parent directory (root of repo)
-const envPath = join(__dirname, '..', '.env');
-dotenv.config({ path: envPath });
-
-console.log('[supabase-debug] Loading env from:', envPath);
-console.log('[supabase-debug] SUPABASE_URL present:', !!process.env.SUPABASE_URL);
-console.log('[supabase-debug] SUPABASE_ANON_KEY present:', !!process.env.SUPABASE_ANON_KEY);
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+console.log('[supabase-debug] SUPABASE_URL present:', !!SUPABASE_URL);
+console.log('[supabase-debug] SUPABASE_ANON_KEY present:', !!SUPABASE_ANON_KEY);
 
 let supabase: SupabaseClient | null = null;
 

@@ -138,8 +138,19 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Debug scripts (may contain credentials)
-debug_*.js
-inspect_*.js
-verify_*.js
-test_*.js
+# Debug directory (contains scripts that may have credentials)
+debug/
+
+# Data dumps and API responses (may contain sensitive data)
+*_dump.json
+api-*-response.json
+variations_*.json
+formatted_defs.json
+
+# Result/log text files
+result_*.txt
+appts_structure.txt
+future_appts.txt
+
+# API documentation files (large, not needed in source control)
+mytime-*-api-docs.json

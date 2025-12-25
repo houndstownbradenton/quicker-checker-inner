@@ -1,0 +1,56 @@
+(node:61094) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+============================================================
+Minimal Spa Booking Tests
+============================================================
+
+1. Checking variation data from cache...
+
+
+>>> GET http://localhost:3000/api/variations
+
+Relevant variations:
+  Townie Bath: add_on=true, duration=0, price=undefined
+  Bath: add_on=false, duration=15, price=undefined
+  Nails: add_on=true, duration=0, price=undefined
+
+
+2. Testing single service bookings...
+
+========== Test: Bath ONLY ==========
+
+>>> POST http://localhost:3000/api/appointments/direct
+Body: {
+  "dogId": "2360682",
+  "clientId": "16969085",
+  "variationId": "99860007",
+  "beginAt": "2025-12-27T10:00:00Z"
+}
+✅ Bath booked successfully!
+
+========== Test: Townie Bath ONLY ==========
+
+>>> POST http://localhost:3000/api/appointments/direct
+Body: {
+  "dogId": "2360682",
+  "clientId": "16969085",
+  "variationId": "91629719",
+  "beginAt": "2025-12-27T10:00:00Z"
+}
+ERROR: {
+  "success": false,
+  "error": {
+    "slot_variations": [
+      {
+        "type": "unprocessable_entity",
+        "message": "Add-on must have a parent_id"
+      }
+    ]
+  }
+}
+❌ Townie Bath failed
+
+
+========== RESULTS ==========
+Bath only: ✅
+Townie Bath only: ❌

@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { enrichDogsWithPhotos } from './supabase.ts';
+import { requireEnv, config } from './env.ts';
+import './logger.ts'; // Initialize file logging - writes to debug/server.log
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,8 +15,12 @@ const __dirname = dirname(__filename);
 // Load environment variables from parent directory
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
+// Validate required environment variables before starting
+requireEnv();
+
 // Inlined constants (TODO: refactor to separate module once ES module issues are resolved)
-const LOCATION_ID = '158078';
+// LOCATION_ID defaults to internal ID '158078' if MYTIME_LOCATION_ID env var is not set
+const LOCATION_ID = process.env.MYTIME_LOCATION_ID || '158078';
 
 const DAYCARE_VARIATIONS = {
     weekday: '91629241',      // Standard Daycare (Mon-Fri)
@@ -36,7 +42,11 @@ const RESOURCE_MAP: Record<string, string> = {
     [DAYCARE_VARIATIONS.weekday]: EMPLOYEE_IDS.daycare,
     [DAYCARE_VARIATIONS.saturday]: EMPLOYEE_IDS.daycare,
     [EVALUATION_VARIATION_ID]: EMPLOYEE_IDS.evaluation,
-    // Spa variations will use spaServices employee
+    // Boarding variations - use boarding employee
+    '91404079': EMPLOYEE_IDS.boarding,   // Boarding - 1 Dog Townhome
+    '91404147': EMPLOYEE_IDS.boarding,   // Boarding - 1 Dog Luxury Suite
+    '111734724': EMPLOYEE_IDS.boarding,  // Boarding - 1 Dog Double Suite
+    // Spa variations will use spaServices employee (default fallback)
 };
 
 // Variation ID to name lookup for logging
@@ -72,30 +82,59 @@ const ADD_ON_VARIATION_IDS: Set<string> = new Set([
     '110763601',  // After 12pm Check Out
 ]);
 
-// Dynamic variation cache - populated from API at startup
+// ============================================================================
+// VARIATION CACHE
+// ============================================================================
+// Dynamically populated from Partner API at startup. Contains service/variation
+// metadata used for booking calculations.
+//
+// IMPORTANT: For boarding services, pay attention to these fields:
+//   - `duration`: Maximum duration (e.g., 20160 min = 14 days). NOT per-night!
+//   - `time_span_range`: The actual booking unit duration (e.g., [1440, 1440] = 24h = 1 night)
+//   - `multiplier_enabled`: If true, multi-unit stays require one variation per unit
+// ============================================================================
 interface VariationInfo {
     id: string;
     name: string;
-    service_name: string;
-    externalId: string;
-    duration: number;  // in minutes
-    add_on: boolean;
-    price: number;
+    duration: number;           // Max duration in minutes (NOT necessarily per-unit!)
+    add_on: boolean;            // Whether this is an add-on service requiring a parent
+    price: number;              // Per-unit price
+    time_span_range?: [number, number];  // [min, max] span in minutes for ONE booking unit
+    multiplier_enabled?: boolean;        // If true, multi-unit bookings multiply price
 }
 
 const variationCache: Map<string, VariationInfo> = new Map();
 
-// Get duration for a variation
+// Get duration for a variation - uses time_span_range first (actual booking unit), then duration
 function getVariationDuration(varId: string): number {
     const cached = variationCache.get(varId);
-    if (cached && cached.duration > 0) return cached.duration;
-    return 15; // Default 15 min if unknown
+    if (!cached) {
+        console.log(`[duration] ${varId}: NOT IN CACHE, using default 15`);
+        return 15; // Default 15 min if unknown
+    }
+
+    // Debug: log what we have
+    console.log(`[duration] ${varId}: time_span_range=${JSON.stringify(cached.time_span_range)}, duration=${cached.duration}`);
+
+    // Prefer time_span_range[0] (actual booking unit duration) over duration field
+    // For Bath: time_span_range=[1,1] means 1 min
+    // For Townie Bath: time_span_range=[15,15] means 15 min
+    // For Boarding: time_span_range=[1440,1440] means 24h (1 night)
+    if (cached.time_span_range && cached.time_span_range[0] > 0) {
+        console.log(`[duration] ${varId}: Using time_span_range[0]=${cached.time_span_range[0]}`);
+        return cached.time_span_range[0];
+    }
+    if (cached.duration && cached.duration > 0) {
+        console.log(`[duration] ${varId}: Using duration=${cached.duration}`);
+        return cached.duration;
+    }
+    console.log(`[duration] ${varId}: Fallback to 15`);
+    return 15; // Default fallback
 }
 
-// Get duration as the API sees it (from cache)
+// Get duration as the API sees it (same logic as getVariationDuration)
 function getApiDuration(varId: string): number {
-    const cached = variationCache.get(varId);
-    return cached?.duration ?? 0;
+    return getVariationDuration(varId);
 }
 
 // Get variation info from cache
@@ -107,12 +146,12 @@ function getVariationInfo(varId: string): VariationInfo | undefined {
 const SPA_PRIMARY_SERVICE_ID = '99860007';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
-// Configuration from .env
-const MYTIME_BASE_URL = process.env.MYTIME_BASE_URL || 'https://www.mytime.com';
-const MYTIME_API_KEY = process.env.MYTIME_API_KEY;
-const COMPANY_ID = process.env.MYTIME_COMPANY_ID;
+// Configuration from env module (validated at startup)
+const MYTIME_BASE_URL = config.MYTIME_BASE_URL;
+const MYTIME_API_KEY = config.MYTIME_API_KEY;
+const COMPANY_ID = config.MYTIME_COMPANY_ID;
 
 // Get the appropriate daycare variation ID based on the day
 function getDaycareVariationId(date: Date = new Date()): string {
@@ -192,20 +231,88 @@ async function partnerApiRequest(method: string, endpoint: string, data: any = n
 async function loadVariationsCache(force: boolean = false): Promise<void> {
     try {
         if (force) {
-            console.log('[cache] Forcing fresh load of variations from Partner API...');
+            console.log('[cache] Forcing fresh load of variations...');
+            variationCache.clear(); // Clear old entries on force refresh
         } else if (variationCache.size > 0) {
             return; // Already loaded and not forcing refresh
         }
 
-        const result = await partnerApiRequest('GET', '/variations', null, {
-            location_mytime_id: parseInt(LOCATION_ID)
-        });
+        console.log('[cache] Fetching variations from Booking API (for duration/times)...');
+        // STRATEGY: Fetch from TWO sources and merge:
+        // 1. Booking API (mytime.com/api/v2): Returns `time_span_range` (critical for accurate duration) but often missing pricing.
+        // 2. Partner API (partners-api.mytime.com): Returns accurate `price` but missing `time_span_range`.
+        const endpoint = `/companies/${COMPANY_ID}/variations?location_id=${LOCATION_ID}`;
+        const bookingResponse = await mytimeRequest('GET', endpoint);
 
-        const variations = result.variations || [];
-        if (force) console.log(`[cache] Found ${variations.length} variations`);
+        console.log('[cache] Fetching variations from Partner API (for pricing)...');
+        let partnerVariations: any[] = [];
+        try {
+            // Use axios directly for Partner API to control headers and host specifically
+            const partnerRes = await axios.get('https://partners-api.mytime.com/api/variations', {
+                params: {
+                    location_mytime_id: LOCATION_ID
+                },
+                headers: {
+                    'X-Api-Key': process.env.MYTIME_API_KEY
+                }
+            });
+            partnerVariations = partnerRes.data.variations || [];
+            console.log(`[cache] Partner API returned ${partnerVariations.length} variations for pricing lookup.`);
+        } catch (err: any) {
+            console.error('[cache] Failed to fetch Partner API variations for pricing:', err.message);
+        }
+
+        // Create a map for quick price lookup: variation_id -> price info
+        const priceMap = new Map<number, number>();
+        for (const pv of partnerVariations) {
+            let price = 0;
+            // Check pricings array first
+            if (pv.pricings && Array.isArray(pv.pricings) && pv.pricings.length > 0) {
+                // Prefer existing_list_price, fallback to others
+                price = pv.pricings[0].existing_list_price || pv.pricings[0].new_list_price || 0;
+            } else if (typeof pv.price === 'number') {
+                price = pv.price;
+            }
+
+            if (price > 0) {
+                priceMap.set(pv.id, price);
+            }
+        }
+
+        const variations = bookingResponse.variations || [];
+        if (force) console.log(`[cache] Found ${variations.length} variations from Booking API`);
+
+        let logCount = 0;
 
         for (const v of variations) {
             const id = String(v.id || v.mytime_id);
+
+            // MERGE PRICING DATA
+            let mergedPrice = v.pricings?.[0]?.existing_list_price || v.price || 0;
+
+            if (priceMap.has(v.id)) {
+                const partnerPrice = priceMap.get(v.id);
+                // Ensure structure exists if we need it later, but mainly set the price we use
+                if (!v.pricings) v.pricings = [{}];
+                if (!v.pricings[0]) v.pricings[0] = {};
+
+                v.pricings[0].existing_list_price = partnerPrice;
+                v.price = partnerPrice; // Set convenience field
+                mergedPrice = partnerPrice;
+            }
+
+            // Debug: log pricing info for first few variations
+            if (force && logCount < 5) {
+                console.log(`[cache] Cached Variation ${v.name}:`, JSON.stringify({
+                    id: v.id,
+                    duration: v.duration,
+                    time_span_range: v.time_span_range,
+                    pricings: v.pricings,
+                    price: v.price
+                }));
+                logCount++;
+            }
+
             const info: VariationInfo = {
                 id,
                 name: v.name || 'Unknown',
@@ -213,7 +320,9 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
                 externalId: v.external_id || id,
                 duration: v.duration || 0,
                 add_on: v.add_on || false,
-                price: v.pricings?.[0]?.existing_list_price || v.price || 0
+                price: mergedPrice,
+                time_span_range: v.time_span_range,
+                multiplier_enabled: v.multiplier_enabled || false
             };
             variationCache.set(id, info);
 
@@ -221,6 +330,15 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
             if (info.name && info.name !== 'Unknown') {
                 VARIATION_NAMES[id] = info.name;
             }
+        }
+
+        // Debugging Townie Bath specifically
+        const townieBath = variationCache.get('91629719');
+        if (townieBath) {
+            console.log('[cache] Townie Bath (91629719) Final Debug:', {
+                price: townieBath.price,
+                time_span_range: townieBath.time_span_range
+            });
         }
 
         if (force) console.log(`[cache] Refreshed ${variationCache.size} variations`);
@@ -770,36 +888,54 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
             const totalRealDuration = requestedVarIds.reduce((sum, id) => sum + getVariationDuration(id), 0);
             console.log(`[direct_booking] Total real duration: ${totalRealDuration}min`);
 
-            let currentStart = new Date(beginAt);
+            // Calculate total duration for the entire appointment block
+            const totalDuration = requestedVarIds.reduce((sum, id) => sum + getVariationDuration(id), 0);
+            const appointmentStart = new Date(beginAt);
+            const appointmentEnd = new Date(appointmentStart.getTime() + totalDuration * 60 * 1000);
+            const appointmentEndStr = appointmentEnd.toISOString().replace('.000Z', 'Z');
 
-            // Build variations - Staggered based on actual duration
+            console.log(`[direct_booking] Total appointment duration: ${totalDuration}min`);
+            console.log(`[direct_booking] Appointment block: ${beginAt} to ${appointmentEndStr}`);
+
+            // Build variations - SEQUENTIAL timing (each starts after previous ends)
+            // The API validates that variation_end_at values are correctly calculated
+            let currentStart = new Date(beginAt);
             variationsArray = requestedVarIds.map((varId: string, index: number) => {
                 const varEmployeeId = RESOURCE_MAP[varId] || EMPLOYEE_IDS.spaServices;
-                const varDuration = getVariationDuration(varId);
                 const varInfo = getVariationInfo(varId);
                 const varPrice = varInfo?.price ?? 0;
+                const varDuration = getVariationDuration(varId);
 
+                // Calculate this variation's start and end time
                 const varBegin = currentStart.toISOString().replace('.000Z', 'Z');
-                currentStart = new Date(currentStart.getTime() + varDuration * 60 * 1000);
-                const varEnd = currentStart.toISOString().replace('.000Z', 'Z');
+                const varEnd = new Date(currentStart.getTime() + varDuration * 60 * 1000);
+                const varEndStr = varEnd.toISOString().replace('.000Z', 'Z');
+
+                // Move start for next variation
+                currentStart = varEnd;
 
                 const variation: any = {
                     variation_mytime_id: String(varId),
                     variation_partner_id: varInfo?.externalId || String(varId),
                     variation_employee_id: String(varEmployeeId),
                     variation_begin_at: varBegin,
-                    variation_end_at: varEnd,
+                    variation_end_at: varEndStr,
                     price: varPrice
                 };
 
-                // Add parent_id for add-ons (index > 0 means it's after the primary service)
-                if (index > 0) {
+                if (index === 0) {
+                    console.log(`[direct_booking] Primary: ${getVarName(varId)} ($${varPrice}, ${varDuration}min) ${varBegin} -> ${varEndStr}`);
+                } else {
+                    // Add-on - must have parent_id pointing to primary
                     variation.parent_id = String(primaryVariationId);
-                    console.log(`[direct_booking] Add-on: ${getVarName(varId)} (${varDuration}min) -> parent: ${getVarName(primaryVariationId)}`);
+                    console.log(`[direct_booking] Add-on: ${getVarName(varId)} ($${varPrice}, ${varDuration}min) ${varBegin} -> ${varEndStr} -> parent: ${getVarName(primaryVariationId)}`);
                 }
 
                 return variation;
             });
+
+            // All variations end at the same time
+            (variationsArray as any).primaryEndAt = appointmentEndStr;
         } else if (variationId) {
             // Single variation (legacy/non-spa)
             const varInfo = getVariationInfo(variationId);
@@ -822,6 +958,8 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
             }];
 
             appointmentEndAt = strictEndAt;
+
+            console.log(`[direct_booking] Single variation payload:`, JSON.stringify(variationsArray, null, 2));
         } else {
             return res.status(400).json({ error: 'Missing variations' });
         }
@@ -836,32 +974,99 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
         const isBoarding = primaryInfo?.service_name === 'Boarding' || primaryVarName.toLowerCase().includes('boarding');
 
         if (isBoarding) {
-            // Get the intended checkout date from the request endAt or fallback to 1 night
-            const checkoutDate = endAt ? new Date(endAt) : new Date(new Date(beginAt).getTime() + 24 * 60 * 60 * 1000);
+            // ============================================================================
+            // BOARDING BOOKING LOGIC
+            // ============================================================================
+            // 
+            // MyTime Partner API requires ONE VARIATION ENTRY PER NIGHT for multi-night
+            // boarding stays. A single variation spanning multiple days will fail with:
+            //   "end_at of appointment must be the latest end_at of all non-buffer segments"
+            //
+            // Key insight from variation configuration:
+            //   - `duration`: 20160 (14 days max) - NOT the per-night duration
+            //   - `time_span_range`: [1440, 1440] (24 hours = 1 night base unit)
+            //   - `multiplier_enabled`: true (API handles multi-night pricing automatically)
+            //
+            // For a 3-night stay (Jan 6-9), we send 3 variation entries:
+            //   Night 1: begin=Jan 6 12:00, end=Jan 7 12:00
+            //   Night 2: begin=Jan 7 12:00, end=Jan 8 12:00
+            //   Night 3: begin=Jan 8 12:00, end=Jan 9 12:00
+            //
+            // The appointment end_at MUST equal the last variation's end_at.
+            // The API will multiply the per-night price by the number of variations.
+            // ============================================================================
+
             const beginDate = new Date(beginAt);
+            const checkoutDate = endAt ? new Date(endAt) : new Date(beginDate.getTime() + 24 * 60 * 60 * 1000);
 
-            // Align check-out to same clock time as check-in for API validation
-            const alignedCheckout = new Date(checkoutDate);
-            alignedCheckout.setUTCHours(beginDate.getUTCHours(), beginDate.getUTCMinutes(), 0, 0);
+            // Calculate number of nights from check-in to checkout
+            const nights = Math.max(1, Math.round((checkoutDate.getTime() - beginDate.getTime()) / (24 * 60 * 60 * 1000)));
 
-            appointmentEndAt = alignedCheckout.toISOString().replace('.000Z', 'Z');
+            // Use time_span_range for the base duration (1440 min = 24h = 1 night)
+            // Do NOT use `duration` field - that's the max duration, not per-night
+            const baseSpan = primaryInfo?.time_span_range?.[0] || 1440; // default to 24h
+            const variationId = variationsArray[0].variation_mytime_id;
+            const employeeId = String(RESOURCE_MAP[variationId] || EMPLOYEE_IDS.boarding);
+            const varPrice = primaryInfo?.price ?? 55;
 
-            const nights = Math.max(1, Math.round((alignedCheckout.getTime() - beginDate.getTime()) / (24 * 60 * 60 * 1000)));
-            console.log(`[direct_booking] Boarding: ${nights} night stay -> ${appointmentEndAt}`);
+            console.log(`[direct_booking] Boarding: ${nights} night(s), base span: ${baseSpan}min`);
+            console.log(`[direct_booking] Creating ${nights} variation(s), one per night`);
 
-            // For boarding, we use ONE variation spanning the whole stay
-            if (variationsArray.length > 0) {
-                variationsArray[0].variation_end_at = appointmentEndAt;
-                console.log(`[direct_booking] Variation end synced to: ${appointmentEndAt}`);
+            // Create one variation entry per night
+            const nightVariations: any[] = [];
+            for (let i = 0; i < nights; i++) {
+                const nightBegin = new Date(beginDate.getTime() + i * baseSpan * 60 * 1000);
+                const nightEnd = new Date(beginDate.getTime() + (i + 1) * baseSpan * 60 * 1000);
+
+                nightVariations.push({
+                    variation_mytime_id: variationId,
+                    variation_employee_id: employeeId,
+                    variation_begin_at: nightBegin.toISOString().replace('.000Z', 'Z'),
+                    variation_end_at: nightEnd.toISOString().replace('.000Z', 'Z'),
+                    price: varPrice
+                });
+                console.log(`[direct_booking]   Night ${i + 1}: ${nightVariations[i].variation_begin_at} -> ${nightVariations[i].variation_end_at}`);
             }
+
+            // Replace the single variation with per-night entries
+            variationsArray = nightVariations;
+
+            // CRITICAL: Appointment end_at must equal the last variation's end_at
+            // This satisfies: "end_at of appointment must be the latest end_at of all non-buffer segments"
+            appointmentEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
+            console.log(`[direct_booking] Appointment end: ${appointmentEndAt}`);
+
+            console.log(`[direct_booking] Note: Actual checkout at 12PM is handled operationally by staff.`);
+        } else {
+            // ============================================================================
+            // SPA/OTHER SERVICE BOOKING LOGIC
+            // ============================================================================
+            // 
+            // MyTime Partner API requires: 
+            //   "end_at of appointment must be the latest end_at of all non-buffer segments"
+            //
+            // Key insight: Buffer segments are TRANSITION TIME between appointments, NOT add-ons.
+            // ALL service variations (primary and add-ons) are non-buffer segments.
+            // Add-ons require parent_id, but they still count as non-buffer segments.
+            //
+            // For a spa booking with:
+            //   - Bath (primary, 15min): 12:15-12:30  <- non-buffer segment
+            //   - Townie Bath (addon): 12:30-12:45   <- non-buffer segment (has parent_id)
+            //   - Nails (addon): 12:45-13:00         <- non-buffer segment (has parent_id)
+            //
+            // Appointment end_at must be 13:00 (last non-buffer segment's end).
+            // ============================================================================
+
+            // Use the LAST variation's end_at as appointment end (all are non-buffer segments)
+            appointmentEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
+            console.log(`[direct_booking] Standard Service: Using last variation end -> ${appointmentEndAt}`);
         }
 
-        // Separated params and body based on Partner API schema
-        const queryParams: any = {
-            location_mytime_id: parseInt(LOCATION_ID),
-            employee_mytime_id: parseInt(primaryEmployeeId),
-            client_mytime_id: clientId ? parseInt(clientId) : undefined,
-            child_mytime_id: dogId ? parseInt(dogId) : undefined,
+        const appointmentData: any = {
+            location_mytime_id: LOCATION_ID,
+            employee_mytime_id: String(primaryEmployeeId),
+            client_mytime_id: clientId ? String(clientId) : undefined,
+            child_mytime_id: dogId ? String(dogId) : undefined,
             begin_at: beginAt,
             end_at: appointmentEndAt
         };
@@ -881,15 +1086,24 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
 
         const result = await partnerApiRequest('POST', '/appointments', bodyData, queryParams);
 
-        // Check in the client after successful booking
+        // Auto check-in ONLY for same-day daycare appointments
         const appointmentId = result.appointment?.mytime_id || result.appointment?.id;
-        if (appointmentId) {
+        const isDaycareService = variationsArray.some((v: any) =>
+            Object.values(DAYCARE_VARIATIONS).includes(v.variation_mytime_id)
+        );
+        const appointmentDate = new Date(beginAt).toDateString();
+        const today = new Date().toDateString();
+        const isSameDay = appointmentDate === today;
+
+        if (appointmentId && isDaycareService && isSameDay) {
             try {
                 await partnerApiRequest('PUT', `/appointments/${appointmentId}/client_checked_in`, {});
-                console.log(`[direct_booking] Client checked in for appointment ${appointmentId}`);
+                console.log(`[direct_booking] Client checked in for daycare appointment ${appointmentId}`);
             } catch (checkInError: any) {
                 console.error(`[direct_booking] Check-in failed (appointment created):`, (checkInError as Error).message);
             }
+        } else if (appointmentId) {
+            console.log(`[direct_booking] Skipping auto-check-in: ${isDaycareService ? 'not same day' : 'not daycare'}`);
         }
 
         res.json({

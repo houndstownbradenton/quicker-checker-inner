@@ -1,0 +1,5 @@
+(node:55105) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Fetching appointments for 2025-12-24...
+Location ID: 158078
+Error: { errors: { general: [ [Object] ] } }

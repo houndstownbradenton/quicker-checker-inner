@@ -1,0 +1,97 @@
+(node:61797) [DEP0180] DeprecationWarning: fs.Stats constructor is deprecated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+Server: http://localhost:3000
+Client: 16969085
+Dog: 2360682
+Services: Bath (parent) + Townie Bath (add-on)
+============================================================
+Test: Bath (parent) + Townie Bath (add-on)
+============================================================
+
+>>> POST http://localhost:3000/api/appointments/direct
+Body: {
+  "dogId": "2360682",
+  "clientId": "16969085",
+  "variations": [
+    {
+      "variation_mytime_id": "99860007"
+    },
+    {
+      "variation_mytime_id": "91629719"
+    }
+  ],
+  "beginAt": "2025-12-28T11:00:00Z",
+  "notes": "Test: Bath + Townie Bath"
+}
+Response: {
+  "success": true,
+  "appointment": {
+    "purchased_at_price": 0,
+    "begin_at": "2025-12-28T11:00:00Z",
+    "end_at": "2025-12-28T11:16:00Z",
+    "client_name": "Patti Jaegar",
+    "client_email": "patti.jaeger@houndstownusa.com",
+    "created_at": "2025-12-25T00:45:31Z",
+    "status": "booked",
+    "time_zone": "America/New_York",
+    "is_existing_customer": true,
+    "variation_name": "Bath",
+    "client_mobile_phone": "(813) 405-7125",
+    "client_home_phone": null,
+    "client_work_phone": null,
+    "checked_in_at": null,
+    "checked_in": null,
+    "checked_out_at": null,
+    "address_id": null,
+    "employee_requested": false,
+    "employee_partner_id": null,
+    "location_partner_id": "66",
+    "child_partner_id": null,
+    "client_partner_id": null,
+    "mytime_id": 68871013,
+    "location_mytime_id": 158078,
+    "child_mytime_id": 2360682,
+    "employee_mytime_id": 295289,
+    "client_mytime_id": 16969085,
+    "partner_id": "",
+    "events": [],
+    "variations": [
+      {
+        "price": 0,
+        "variation_partner_id": "bath",
+        "variation_mytime_id": 99860007,
+        "segments": [
+          {
+            "position": 0,
+            "kind": "service",
+            "segment_template_id": 1137119,
+            "duration": 1,
+            "segment_resources": []
+          }
+        ]
+      },
+      {
+        "price": 0,
+        "variation_partner_id": "townie bath",
+        "variation_mytime_id": 91629719,
+        "segments": [
+          {
+            "position": 0,
+            "kind": "service",
+            "segment_template_id": 1085524,
+            "duration": 15,
+            "segment_resources": []
+          }
+        ]
+      }
+    ]
+  }
+}
+
+✅ Booking succeeded!
+Appointment ID: 68871013
+
+============================================================
+RESULT: ✅ SUCCESS
+============================================================
