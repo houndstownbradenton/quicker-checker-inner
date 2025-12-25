@@ -793,6 +793,27 @@ async function updateServiceDropdowns() {
     // Clear existing dropdown
     select.innerHTML = '';
 
+    // Handle Evaluation Note (Must run before any early returns)
+    let noteEl = document.getElementById('eval-note');
+    if (!noteEl) {
+        noteEl = document.createElement('div');
+        noteEl.id = 'eval-note';
+        noteEl.className = 'info-note hidden';
+        noteEl.style.marginTop = '0.5rem';
+        noteEl.style.fontSize = '0.9rem';
+        noteEl.style.color = 'var(--primary-color)';
+        if (elements.serviceType.parentNode) {
+            elements.serviceType.parentNode.insertBefore(noteEl, elements.serviceType.nextSibling);
+        }
+    }
+
+    if (serviceType === 'evaluation') {
+        noteEl.textContent = 'ℹ️ Evaluations are required for all new dogs before their first daycare or boarding stay.';
+        noteEl.classList.remove('hidden');
+    } else {
+        noteEl.classList.add('hidden');
+    }
+
     if (serviceType === 'spa') {
         elements.spaServicesSection.classList.remove('hidden');
         elements.checkoutSection?.classList.add('hidden'); // Hide for spa
@@ -864,26 +885,7 @@ async function updateServiceDropdowns() {
         // For now, strict filtering is safer.
     }
 
-    // Toggle note for evaluation
-    let noteEl = document.getElementById('eval-note');
-    if (!noteEl) {
-        noteEl = document.createElement('div');
-        noteEl.id = 'eval-note';
-        noteEl.className = 'info-note hidden';
-        noteEl.style.marginTop = '0.5rem';
-        noteEl.style.fontSize = '0.9rem';
-        noteEl.style.color = 'var(--primary-color)';
-        if (elements.serviceType.parentNode) {
-            elements.serviceType.parentNode.insertBefore(noteEl, elements.serviceType.nextSibling);
-        }
-    }
 
-    if (serviceType === 'evaluation') {
-        noteEl.textContent = 'ℹ️ Evaluations are required for all new dogs before their first daycare or boarding stay.';
-        noteEl.classList.remove('hidden');
-    } else {
-        noteEl.classList.add('hidden');
-    }
 
     // Sort alpha
     filtered.sort((a, b) => a.name.localeCompare(b.name));
@@ -1034,6 +1036,13 @@ async function openModal(dog: Dog) {
     }
 
     elements.checkinModal.classList.remove('hidden');
+
+    // Auto-focus the Service Type dropdown for better accessibility
+    setTimeout(() => {
+        if (elements.serviceType) {
+            elements.serviceType.focus();
+        }
+    }, 50);
 }
 
 function closeModal() {
