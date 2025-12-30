@@ -38,6 +38,20 @@ const EMPLOYEE_IDS = {
     daycare: '295287'
 };
 
+// Fallback map for segment_template_ids (since Partner API default endpoint excludes them)
+const SEGMENT_TEMPLATE_IDS_FALLBACK: Record<string, number[]> = {
+    '91404079': [1084480],   // Boarding - 1 Dog Townhome
+    '111734724': [1303864],  // Boarding - 1 Dog Double Suite
+    '91404147': [1084481],   // Boarding - 1 Dog Luxury Suite
+    '113322720': [1460720],  // Shelter Boarding
+    '111288628': [1257028],  // Boarding - Additional Dog
+    '91407252': [1084501],   // Cat Boarding
+    // Daycare/Services
+    '91629719': [1085524],   // Townie Bath
+    '91629241': [1085520],   // Daycare
+    '110709520': [1196247]   // Resident Daycare
+};
+
 const RESOURCE_MAP: Record<string, string> = {
     [DAYCARE_VARIATIONS.weekday]: EMPLOYEE_IDS.daycare,
     [DAYCARE_VARIATIONS.saturday]: EMPLOYEE_IDS.daycare,
@@ -101,6 +115,9 @@ interface VariationInfo {
     price: number;              // Per-unit price
     time_span_range?: [number, number];  // [min, max] span in minutes for ONE booking unit
     multiplier_enabled?: boolean;        // If true, multi-unit bookings multiply price
+    segment_template_ids?: number[];     // IDs for segment templates (used for multi-day boarding)
+    externalId?: string;                 // Partner ID (e.g. "bath", "townie bath")
+    service_name?: string;               // Service category name
 }
 
 const variationCache: Map<string, VariationInfo> = new Map();
@@ -322,6 +339,24 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
             }
         }
 
+        // Create a map for segment template IDs: variation_id -> segment_template_ids
+        // Use string keys to ensure matching works regardless of type
+        const segmentTemplateMap = new Map<string, number[]>();
+        for (const pv of partnerVariations) {
+            const pvIdStr = String(pv.id);
+            if (pv.segment_template_ids && Array.isArray(pv.segment_template_ids)) {
+                segmentTemplateMap.set(pvIdStr, pv.segment_template_ids);
+                if (pv.segment_template_ids.length > 0) {
+                    console.log(`[cache] Found template IDs for ${pvIdStr} (API): ${pv.segment_template_ids.join(',')}`);
+                }
+            } else if (SEGMENT_TEMPLATE_IDS_FALLBACK[pvIdStr]) {
+                // Use fallback if API doesn't return it
+                const fallbackIds = SEGMENT_TEMPLATE_IDS_FALLBACK[pvIdStr];
+                segmentTemplateMap.set(pvIdStr, fallbackIds);
+                console.log(`[cache] Found template IDs for ${pvIdStr} (Fallback): ${fallbackIds.join(',')}`);
+            }
+        }
+
         const variations = bookingResponse.variations || [];
         if (force) console.log(`[cache] Found ${variations.length} variations from Booking API`);
 
@@ -351,7 +386,8 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
                     duration: v.duration,
                     time_span_range: v.time_span_range,
                     pricings: v.pricings,
-                    price: v.price
+                    price: v.price,
+                    segment_template_ids: segmentTemplateMap.get(id)
                 }));
                 logCount++;
             }
@@ -365,7 +401,8 @@ async function loadVariationsCache(force: boolean = false): Promise<void> {
                 add_on: v.add_on || false,
                 price: mergedPrice,
                 time_span_range: v.time_span_range,
-                multiplier_enabled: v.multiplier_enabled || false
+                multiplier_enabled: v.multiplier_enabled || false,
+                segment_template_ids: segmentTemplateMap.get(id) || []
             };
             variationCache.set(id, info);
 
@@ -530,7 +567,9 @@ app.get('/api/variations/by-employee/:employeeId', async (req: Request, res: Res
         const { employeeId } = req.params;
 
         // Try Partner API /variations with employee_id and location_mytime_id
-        const result = await partnerApiRequest('GET', '/variations', {
+        // Try Partner API /variations with employee_id and location_mytime_id
+        // FIX: Pass params as 4th argument, null for data (3rd arg) for GET requests
+        const result = await partnerApiRequest('GET', '/variations', null, {
             employee_id: employeeId,
             location_mytime_id: LOCATION_ID
         });
@@ -948,6 +987,12 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
             // Build variations - SEQUENTIAL timing (each starts after previous ends)
             // The API validates that variation_end_at values are correctly calculated
             let currentStart = new Date(beginAt);
+            // Determine primary variation's Partner ID (externalId) for add-on referencing
+            // primaryVariationId is already defined above
+            const primaryVarInfo = getVariationInfo(primaryVariationId);
+            // Must use SAME logic as inside the map's variation_partner_id
+            const primaryPartnerId = primaryVarInfo?.externalId || String(primaryVariationId);
+
             variationsArray = requestedVarIds.map((varId: string, index: number) => {
                 const varEmployeeId = RESOURCE_MAP[varId] || EMPLOYEE_IDS.spaServices;
                 const varInfo = getVariationInfo(varId);
@@ -974,9 +1019,9 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
                 if (index === 0) {
                     console.log(`[direct_booking] Primary: ${getVarName(varId)} ($${varPrice}, ${varDuration}min) ${varBegin} -> ${varEndStr}`);
                 } else {
-                    // Add-on - must have parent_id pointing to primary
-                    variation.parent_id = String(primaryVariationId);
-                    console.log(`[direct_booking] Add-on: ${getVarName(varId)} ($${varPrice}, ${varDuration}min) ${varBegin} -> ${varEndStr} -> parent: ${getVarName(primaryVariationId)}`);
+                    // Add-on - must have parent_id pointing to primary's PARTNER ID (not MyTime ID)
+                    variation.parent_id = primaryPartnerId;
+                    console.log(`[direct_booking] Add-on: ${getVarName(varId)} ($${varPrice}, ${varDuration}min) ${varBegin} -> ${varEndStr} -> parent: ${getVarName(primaryVariationId)} (${primaryPartnerId})`);
                 }
 
                 return variation;
@@ -1022,69 +1067,80 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
         const isBoarding = primaryInfo?.service_name === 'Boarding' || primaryVarName.toLowerCase().includes('boarding');
 
         if (isBoarding) {
-            // ============================================================================
-            // BOARDING BOOKING LOGIC
-            // ============================================================================
-            // 
-            // MyTime Partner API requires ONE VARIATION ENTRY PER NIGHT for multi-night
-            // boarding stays. A single variation spanning multiple days will fail with:
-            //   "end_at of appointment must be the latest end_at of all non-buffer segments"
-            //
-            // Key insight from variation configuration:
-            //   - `duration`: 20160 (14 days max) - NOT the per-night duration
-            //   - `time_span_range`: [1440, 1440] (24 hours = 1 night base unit)
-            //   - `multiplier_enabled`: true (API handles multi-night pricing automatically)
-            //
-            // For a 3-night stay (Jan 6-9), we send 3 variation entries:
-            //   Night 1: begin=Jan 6 12:00, end=Jan 7 12:00
-            //   Night 2: begin=Jan 7 12:00, end=Jan 8 12:00
-            //   Night 3: begin=Jan 8 12:00, end=Jan 9 12:00
-            //
-            // The appointment end_at MUST equal the last variation's end_at.
-            // The API will multiply the per-night price by the number of variations.
-            // ============================================================================
-
+            const hasSegmentTemplates = primaryInfo?.segment_template_ids && primaryInfo.segment_template_ids.length > 0;
             const beginDate = new Date(beginAt);
-            const checkoutDate = endAt ? new Date(endAt) : new Date(beginDate.getTime() + 24 * 60 * 60 * 1000);
+            const checkoutDate = endAt ? new Date(endAt) : new Date(beginDate.getTime() + 24 * 60 * 60 * 1000); // Default 1 night
 
-            // Calculate number of nights from check-in to checkout
+            // Calculate number of nights
             const nights = Math.max(1, Math.round((checkoutDate.getTime() - beginDate.getTime()) / (24 * 60 * 60 * 1000)));
-
-            // Use time_span_range for the base duration (1440 min = 24h = 1 night)
-            // Do NOT use `duration` field - that's the max duration, not per-night
-            const baseSpan = primaryInfo?.time_span_range?.[0] || 1440; // default to 24h
             const variationId = variationsArray[0].variation_mytime_id;
             const employeeId = String(RESOURCE_MAP[variationId] || EMPLOYEE_IDS.boarding);
             const varPrice = primaryInfo?.price ?? 55;
 
-            console.log(`[direct_booking] Boarding: ${nights} night(s), base span: ${baseSpan}min`);
-            console.log(`[direct_booking] Creating ${nights} variation(s), one per night`);
+            if (hasSegmentTemplates) {
+                // ============================================================================
+                // SEGMENTS-BASED BOARDING (New Method)
+                // ============================================================================
+                const segmentTemplateId = primaryInfo.segment_template_ids![0];
+                const totalMinutes = nights * 1440;
 
-            // Create one variation entry per night
-            const nightVariations: any[] = [];
-            for (let i = 0; i < nights; i++) {
-                const nightBegin = new Date(beginDate.getTime() + i * baseSpan * 60 * 1000);
-                const nightEnd = new Date(beginDate.getTime() + (i + 1) * baseSpan * 60 * 1000);
+                console.log(`[direct_booking] Segment Boarding: ${nights} night(s), Total ${totalMinutes}min`);
+                console.log(`[direct_booking] Template ID: ${segmentTemplateId}`);
 
-                nightVariations.push({
+                // Single variation spanning the full duration
+                const singleVariation = {
                     variation_mytime_id: variationId,
                     variation_employee_id: employeeId,
-                    variation_begin_at: nightBegin.toISOString().replace('.000Z', 'Z'),
-                    variation_end_at: nightEnd.toISOString().replace('.000Z', 'Z'),
-                    price: varPrice
-                });
-                console.log(`[direct_booking]   Night ${i + 1}: ${nightVariations[i].variation_begin_at} -> ${nightVariations[i].variation_end_at}`);
+                    variation_begin_at: beginAt,
+                    variation_end_at: new Date(beginDate.getTime() + totalMinutes * 60 * 1000).toISOString().replace('.000Z', 'Z'),
+                    price: varPrice * nights, // Total price
+                    segments: [
+                        {
+                            kind: "service",
+                            position: 0,
+                            duration: totalMinutes,
+                            segment_template_id: segmentTemplateId
+                        }
+                    ]
+                };
+
+                variationsArray = [singleVariation];
+                appointmentEndAt = singleVariation.variation_end_at;
+                console.log(`[direct_booking] Forced End At (matching duration): ${appointmentEndAt}`);
+            } else {
+                // ============================================================================
+                // LEGACY BOARDING (Per-Night Variations)
+                // ============================================================================
+                // Use time_span_range for the base duration (1440 min = 24h = 1 night)
+                const baseSpan = primaryInfo?.time_span_range?.[0] || 1440; // default to 24h
+
+                console.log(`[direct_booking] Legacy Boarding: ${nights} night(s), base span: ${baseSpan}min`);
+                console.log(`[direct_booking] Creating ${nights} variation(s), one per night`);
+
+                // Create one variation entry per night
+                const nightVariations: any[] = [];
+                for (let i = 0; i < nights; i++) {
+                    const nightBegin = new Date(beginDate.getTime() + i * baseSpan * 60 * 1000);
+                    const nightEnd = new Date(beginDate.getTime() + (i + 1) * baseSpan * 60 * 1000);
+
+                    nightVariations.push({
+                        variation_mytime_id: variationId,
+                        variation_employee_id: employeeId,
+                        variation_begin_at: nightBegin.toISOString().replace('.000Z', 'Z'),
+                        variation_end_at: nightEnd.toISOString().replace('.000Z', 'Z'),
+                        price: varPrice
+                    });
+                    console.log(`[direct_booking]   Night ${i + 1}: ${nightVariations[i].variation_begin_at} -> ${nightVariations[i].variation_end_at}`);
+                }
+
+                // Replace the single variation with per-night entries
+                variationsArray = nightVariations;
+
+                // CRITICAL: Appointment end_at must equal the last variation's end_at
+                appointmentEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
             }
 
-            // Replace the single variation with per-night entries
-            variationsArray = nightVariations;
-
-            // CRITICAL: Appointment end_at must equal the last variation's end_at
-            // This satisfies: "end_at of appointment must be the latest end_at of all non-buffer segments"
-            appointmentEndAt = variationsArray[variationsArray.length - 1].variation_end_at;
             console.log(`[direct_booking] Appointment end: ${appointmentEndAt}`);
-
-            console.log(`[direct_booking] Note: Actual checkout at 12PM is handled operationally by staff.`);
         } else {
             // ============================================================================
             // SPA/OTHER SERVICE BOOKING LOGIC
@@ -1120,6 +1176,10 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
         };
 
         const bodyData: any = {
+            variations: variationsArray,
+            notes: [{
+                content: 'Appointment scheduled with Quicker Checker Inner app.'
+            }],
             appointment: {
                 variations: variationsArray,
                 notes: [{
@@ -1129,10 +1189,10 @@ app.post('/api/appointments/direct', async (req: Request, res: Response) => {
         };
 
         console.log(`[direct_booking] Final Sending (POST /appointments):`);
-        console.log(`[direct_booking] Query Params:`, JSON.stringify(queryParams, null, 2));
+        console.log(`[direct_booking] Query Params:`, JSON.stringify(appointmentData, null, 2));
         console.log(`[direct_booking] Body Data:`, JSON.stringify(bodyData, null, 2));
 
-        const result = await partnerApiRequest('POST', '/appointments', bodyData, queryParams);
+        const result = await partnerApiRequest('POST', '/appointments', bodyData, appointmentData);
 
         // Auto check-in ONLY for same-day daycare appointments
         const appointmentId = result.appointment?.mytime_id || result.appointment?.id;

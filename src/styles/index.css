@@ -79,6 +79,12 @@ h1 {
   text-shadow: none;
 }
 
+/* Card section headers */
+.section-title {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+}
+
 label {
   display: block;
   font-size: 0.875rem;
@@ -128,8 +134,10 @@ textarea:focus {
   outline: none;
   border-color: var(--primary-color);
   background: white;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+  /* "Rise off the page" effect matching dog-relationship-tracker */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+  z-index: 10;
 }
 
 input:hover,
@@ -170,25 +178,43 @@ input[type="file"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1.5rem;
+  padding: 0 1.5rem;
+  height: 3rem; /* Match input height */
   border-radius: var(--radius-md);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  border: none;
+  border: 1px solid transparent;
   gap: 0.5rem;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+.btn:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: white;
+  /* Lift effect */
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+  z-index: 10;
 }
 
 .btn-primary {
   background: var(--secondary-color);
   color: white;
+  border-color: transparent;
 }
 
 .btn-primary:hover {
   background: #98b028;
-  /* Darker shade of #b9d532 */
   transform: translateY(-1px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.btn-primary:focus {
+  background: var(--secondary-color);
+  border-color: #98b028;
 }
 
 .btn-secondary {
@@ -199,6 +225,164 @@ input[type="file"] {
 
 .btn-secondary:hover {
   background: #e2e8f0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.btn-secondary:focus {
+  background: white;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: 1px solid transparent;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.btn-danger:focus {
+  background: #ef4444;
+  border-color: #b91c1c;
+}
+
+/* ==============================================
+   CIRCULAR ICON BUTTONS
+   Matching dog-relationship-tracker style
+   ============================================== */
+
+/* Base icon button - circular with icon only */
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  font-size: 1rem;
+}
+
+.icon-btn:focus {
+  outline: none;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+  border-color: var(--primary-color);
+  z-index: 10;
+}
+
+/* Primary icon button - green (save/confirm actions) */
+.icon-btn.primary {
+  background: var(--secondary-color);
+  color: #fff;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.icon-btn.primary:hover {
+  background: #a3bd2c;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.icon-btn.primary:focus {
+  box-shadow: 0 0 0 3px rgba(185, 213, 50, 0.4);
+  border-color: transparent !important;
+}
+
+/* Secondary icon button - gray (cancel/close actions) */
+.icon-btn.secondary {
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.icon-btn.secondary:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Delete icon button - red */
+.icon-btn.delete {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.icon-btn.delete:hover {
+  background: #fca5a5;
+  color: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Edit/Manage icon button - blue */
+.icon-btn.edit,
+.icon-btn.manage {
+  background: #dbeafe;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.icon-btn.edit:hover,
+.icon-btn.manage:hover {
+  background: #bfdbfe;
+  color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Header icon buttons - for use in headers on colored backgrounds */
+.header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.header-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.header-icon-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.header-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Syncing state - red background for cancel action */
+.header-icon-btn.syncing {
+  background: rgba(239, 68, 68, 0.8);
+  border-color: rgba(239, 68, 68, 1);
+}
+
+.header-icon-btn.syncing:hover {
+  background: rgba(220, 38, 38, 0.9);
+  border-color: rgba(220, 38, 38, 1);
 }
 
 .grid {
@@ -389,7 +573,22 @@ input[type="file"] {
   background-color: #f9fafb;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 1rem;
+}
+
+/* Spin animation for loading icons */
+:global(.spin) {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Dog Info in Modal */
@@ -451,6 +650,15 @@ input[type="file"] {
 .multiselect-trigger:hover {
   background-color: #e2e8f0;
   /* Match standard input hover */
+}
+
+.multiselect-trigger:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: white;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+  z-index: 10;
 }
 
 .multiselect-search-container {
@@ -1773,4 +1981,78 @@ input[type="file"] {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* CheckinModal - Horizontal Dog Info Layout */
+.selected-dog-info-horizontal {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.selected-dog-photo-large {
+  width: 80px;
+  height: 80px;
+  min-width: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: white;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.selected-dog-photo-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.selected-dog-details-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.dog-name-modal {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dog-owner-modal {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.dog-details-modal {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* Gender Icons */
+.gender-icon {
+  font-size: 2.25rem;
+  font-weight: 900;
+}
+
+.gender-icon.male {
+  color: #3b82f6;
+}
+
+.gender-icon.female {
+  color: #ec4899;
 }

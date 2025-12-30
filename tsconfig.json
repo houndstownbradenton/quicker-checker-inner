@@ -1,29 +1,25 @@
 {
+    "extends": "./.svelte-kit/tsconfig.json",
     "compilerOptions": {
-        "target": "ESNext",
-        "useDefineForClassFields": true,
-        "module": "ESNext",
-        "lib": [
-            "ESNext",
-            "DOM",
-            "DOM.Iterable"
-        ],
-        "skipLibCheck": true,
-        /* Bundler mode */
-        "moduleResolution": "bundler",
-        "allowImportingTsExtensions": true,
+        "allowJs": true,
+        "checkJs": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
-        "isolatedModules": true,
-        "noEmit": true,
-        /* Linting */
+        "skipLibCheck": true,
+        "sourceMap": true,
         "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noFallthroughCasesInSwitch": true
+        "moduleResolution": "bundler",
+        "noEmit": true,
+        "types": [
+            "svelte",
+            "vite/client"
+        ]
     },
     "include": [
         "src",
-        "server"
+        "server",
+        "src/**/*.svelte"
     ],
     "ts-node": {
         "esm": true,

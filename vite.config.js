@@ -1,17 +1,20 @@
+import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  root: '.',
+  plugins: [sveltekit()],
+  ssr: {
+    noExternal: ['lucide-svelte']
+  },
+
+  // Proxy API calls to the backend server
   server: {
-    port: 5173,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       }
     }
-  },
-  build: {
-    outDir: 'dist'
   }
 });

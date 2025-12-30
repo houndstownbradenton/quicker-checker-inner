@@ -52,3 +52,19 @@ Copy `.env.example` to `.env` and configure:
 ### Boarding Appointments
 
 Multi-night boarding bookings require special handling. The MyTime API expects **one variation entry per night**. See [server/README.md](./server/README.md#boarding-appointments) for details.
+
+## UI Components
+
+### Icon Buttons
+
+The application uses circular icon buttons (matching the dog-relationship-tracker style):
+
+| Class | Description | Use Case |
+|-------|-------------|----------|
+| `.icon-btn.primary` | Green circular button | Confirm/Save actions |
+| `.icon-btn.secondary` | Gray circular button | Cancel/Close actions |
+| `.icon-btn.delete` | Red circular button | Delete actions |
+| `.icon-btn.edit` | Blue circular button | Edit actions |
+| `.header-icon-btn` | Semi-transparent circular button | Header actions on colored backgrounds |
+
+Icons are provided by [lucide-svelte](https://lucide.dev/guide/packages/lucide-svelte).
